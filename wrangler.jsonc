@@ -12,7 +12,11 @@
   "env": {
     "local": {
       "name": "discord-ai-bot-local",
-      "vars": { "ENVIRONMENT": "local" },
+      "vars": {
+        "ENVIRONMENT": "local",
+        "OPENAI_MODEL": "gpt-5-mini",
+        "DEFAULT_TIMEZONE": "Asia/Tokyo",
+      },
       "d1_databases": [
         {
           "binding": "DB",
@@ -24,7 +28,11 @@
     },
     "preview": {
       "name": "discord-ai-bot-preview",
-      "vars": { "ENVIRONMENT": "preview" },
+      "vars": {
+        "ENVIRONMENT": "preview",
+        "OPENAI_MODEL": "gpt-5-mini",
+        "DEFAULT_TIMEZONE": "Asia/Tokyo",
+      },
       "d1_databases": [
         {
           "binding": "DB",
@@ -37,7 +45,11 @@
     },
     "production": {
       "name": "discord-ai-bot-production",
-      "vars": { "ENVIRONMENT": "production" },
+      "vars": {
+        "ENVIRONMENT": "production",
+        "OPENAI_MODEL": "gpt-5-mini",
+        "DEFAULT_TIMEZONE": "Asia/Tokyo",
+      },
       "d1_databases": [
         {
           "binding": "DB",

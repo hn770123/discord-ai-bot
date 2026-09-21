@@ -24,6 +24,7 @@ export interface InteractionHandlerDependencies {
   context: Pick<ExecutionContext, 'waitUntil'>;
   now?: Date;
   processAi?: (interaction: AiInteraction) => Promise<string>;
+  executeAi?: (interaction: AiInteraction) => Promise<void>;
 }
 
 /** 認可後かつ defer 後にだけ実行する、Phase 3 までの安全な暫定処理。 */
@@ -68,11 +69,13 @@ export async function handleInteraction(
       });
     }
 
-    const processing = processDeferredInteraction(
-      interaction,
-      dependencies.discord,
-      dependencies.processAi ?? defaultProcessAi,
-    );
+    const processing =
+      dependencies.executeAi?.(interaction) ??
+      processDeferredInteraction(
+        interaction,
+        dependencies.discord,
+        dependencies.processAi ?? defaultProcessAi,
+      );
     dependencies.context.waitUntil(processing);
     return json({ type: RESPONSE_TYPE_DEFERRED_CHANNEL_MESSAGE });
   } catch (error) {

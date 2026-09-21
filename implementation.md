@@ -61,6 +61,8 @@ Authorization: Bot {DISCORD_BOT_TOKEN}
 `last_message_id` は前回AIが参加した位置としてD1に保持する。
 初期版では履歴が100件を超えるケースを過剰設計しない。必要になってからページング・要約・検索を追加する。
 
+API応答は未信頼入力として扱い、各Messageの `guild_id` と `channel_id` がInteractionと一致する場合だけ採用する。Discord APIが通常返す新しい順の配列は投稿時刻とsnowflakeで古い順へ正規化し、空本文は除外する。checkpointがない初回も `limit=100` とし、取得結果が0件でも今回の `/ai` 依頼だけで処理を継続する。
+
 ## 5. Message Content / 権限
 必要権限:
 
@@ -100,6 +102,8 @@ Existing reminders if needed
 
 `target = channel` はメンションなし、`target = user` は作成者本人へのメンション。
 LLM出力はWorker側で日時・target・文字数等を検証する。
+
+OpenAI Responses API の `text.format` に strict JSON Schema を指定する。モデルがschemaへ適合させた場合も信用せず、Workerで未知プロパティ、空文字、Discordの2000文字上限、無効／過去日時、`channel`／`user` 以外のtargetを再検証する。`user` はInteractionを実行した本人へ固定し、任意User IDをモデルから受け取らない。
 
 ## 7. Mention制御
 Discord投稿時は `allowed_mentions` を明示する。
@@ -169,6 +173,8 @@ Scheduled Message送信失敗
 
 LLM失敗時にBriefやReminderを中途半端に更新しない。
 
+更新順序は「履歴 → checkpoint／User → LLM 1回 → 出力全体の検証 → Brief／Reminder → Discord応答 → checkpoint」とする。Reminderの主キーにはInteraction IDを使用し、再実行時のINSERTは `ON CONFLICT DO NOTHING` とする。LLM失敗時はUserの初期行以外を変更しない。Discord編集失敗時はcheckpointを進めないため履歴を失わず、再実行時のReminderは同じ主キーで重複しない。Discord成功後のcheckpoint保存失敗では次回履歴に直前のBot応答が再び含まれる可能性があるため、運用ではD1障害の解消後に再実行し、必要なら対象Channelのcheckpointを成功したBot Message IDへ修復する。
+
 ## 12. 参考
 Discord:
 - https://docs.discord.com/developers/interactions/receiving-and-responding
@@ -180,3 +186,7 @@ Cloudflare:
 - https://developers.cloudflare.com/workers/runtime-apis/context/
 - https://developers.cloudflare.com/d1/
 - https://developers.cloudflare.com/workers/configuration/cron-triggers/
+
+OpenAI:
+- https://developers.openai.com/api/reference/resources/responses/methods/create
+- https://developers.openai.com/api/docs/guides/structured-outputs
