@@ -70,18 +70,19 @@ export class RemindersRepository {
   public constructor(private readonly db: D1Database) {}
 
   /** 新規Reminderを pending として登録し、初回試行日時を通知日時へ揃える。 */
-  public async create(input: NewReminder): Promise<void> {
+  public async create(input: NewReminder): Promise<boolean> {
     if (input.message.trim().length === 0) {
       throw new TypeError('Reminder message must not be empty');
     }
 
-    await this.db
+    const result = await this.db
       .prepare(
         `INSERT INTO reminders
           (id, created_by_user_id, target_user_id, guild_id, channel_id, message,
            remind_at, status, attempt_count, next_attempt_at, lease_expires_at,
            created_at, sent_at, last_error)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, NULL, ?, NULL, NULL)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, NULL, ?, NULL, NULL)
+         ON CONFLICT (id) DO NOTHING`,
       )
       .bind(
         input.id,
@@ -95,6 +96,8 @@ export class RemindersRepository {
         input.createdAt,
       )
       .run();
+
+    return result.meta.changes === 1;
   }
 
   /** IDだけでなくGuild／Channelも一致したReminderだけを返す。 */

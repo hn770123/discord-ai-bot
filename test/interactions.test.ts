@@ -62,6 +62,7 @@ function createDb(allowed: boolean, queried: ReturnType<typeof vi.fn>): D1Databa
 function aiPayload(overrides: Record<string, unknown> = {}): string {
   return JSON.stringify({
     type: 2,
+    id: '100000000000000000',
     application_id: '100000000000000001',
     token: 'interaction-token-must-not-be-logged',
     guild_id: '100000000000000002',
@@ -110,7 +111,7 @@ describe('Interaction handler', () => {
     const response = await handleInteraction(signed.request, {
       db: createDb(false, vi.fn()),
       publicKey: signed.publicKey,
-      discord: { editOriginalInteractionResponse: vi.fn() },
+      discord: { listChannelMessages: vi.fn(), editOriginalInteractionResponse: vi.fn() },
       context: { waitUntil: vi.fn() },
       now: NOW,
     });
@@ -127,7 +128,7 @@ describe('Interaction handler', () => {
       {
         db: createDb(true, queried),
         publicKey: '00'.repeat(32),
-        discord: { editOriginalInteractionResponse: vi.fn() },
+        discord: { listChannelMessages: vi.fn(), editOriginalInteractionResponse: vi.fn() },
         context: { waitUntil: vi.fn() },
         now: NOW,
       },
@@ -146,7 +147,7 @@ describe('Interaction handler', () => {
     const response = await handleInteraction(signed.request, {
       db: createDb(false, vi.fn()),
       publicKey: signed.publicKey,
-      discord: { editOriginalInteractionResponse: edit },
+      discord: { listChannelMessages: vi.fn(), editOriginalInteractionResponse: edit },
       context: { waitUntil },
       processAi,
       now: NOW,
@@ -165,11 +166,13 @@ describe('Interaction handler', () => {
   it('defers an allowed command and edits the original response asynchronously', async () => {
     const signed = await createSignedRequest(aiPayload());
     const pending: Promise<unknown>[] = [];
-    const edit = vi.fn<DiscordClient['editOriginalInteractionResponse']>().mockResolvedValue();
+    const edit = vi
+      .fn<DiscordClient['editOriginalInteractionResponse']>()
+      .mockResolvedValue('100000000000000005' as never);
     const response = await handleInteraction(signed.request, {
       db: createDb(true, vi.fn()),
       publicKey: signed.publicKey,
-      discord: { editOriginalInteractionResponse: edit },
+      discord: { listChannelMessages: vi.fn(), editOriginalInteractionResponse: edit },
       context: { waitUntil: (promise) => pending.push(promise) },
       processAi: (interaction) => Promise.resolve(`受信: ${interaction.prompt}`),
       now: NOW,

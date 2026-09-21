@@ -6,8 +6,10 @@ import { toSnowflake } from '../src/domain/types';
 describe('Discord client', () => {
   /** 元Interaction ResponseをPATCHし、Bot認証ヘッダーやmentionを送らない。 */
   it('edits the original response with mentions disabled', async () => {
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 204 }));
-    const client = createDiscordClient(fetcher);
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json({ id: '100000000000000009' }));
+    const client = createDiscordClient('bot-token', fetcher);
 
     await client.editOriginalInteractionResponse({
       applicationId: toSnowflake('100000000000000001'),
@@ -33,7 +35,7 @@ describe('Discord client', () => {
     const fetcher = vi
       .fn<typeof fetch>()
       .mockResolvedValue(new Response('sensitive response', { status: 500 }));
-    const client = createDiscordClient(fetcher);
+    const client = createDiscordClient('bot-token', fetcher);
 
     await expect(
       client.editOriginalInteractionResponse({
@@ -42,5 +44,34 @@ describe('Discord client', () => {
         content: 'test',
       }),
     ).rejects.toEqual(new DiscordApiError(500));
+  });
+
+  /** 履歴取得では100件上限とcheckpointを指定し、別Channelの応答を拒否する。 */
+  it('gets at most 100 messages after the checkpoint and verifies context', async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json([
+        {
+          id: '100000000000000010',
+          guild_id: '100000000000000001',
+          channel_id: '100000000000000002',
+          author: { id: '100000000000000003' },
+          content: '会話',
+          timestamp: '2026-09-21T11:00:00.000Z',
+        },
+      ]),
+    );
+    const client = createDiscordClient('bot-token', fetcher);
+    await expect(
+      client.listChannelMessages({
+        guildId: toSnowflake('100000000000000001'),
+        channelId: toSnowflake('100000000000000002'),
+        after: toSnowflake('100000000000000004'),
+      }),
+    ).resolves.toHaveLength(1);
+    const [url, init] = fetcher.mock.calls[0] ?? [];
+    expect(url).toBeInstanceOf(URL);
+    expect((url as URL).searchParams.get('limit')).toBe('100');
+    expect((url as URL).searchParams.get('after')).toBe('100000000000000004');
+    expect(init?.headers).toEqual({ authorization: 'Bot bot-token' });
   });
 });

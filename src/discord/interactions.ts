@@ -13,6 +13,7 @@ export const EPHEMERAL_MESSAGE_FLAG = 1 << 6;
 
 /** 検証済みの `/ai` 呼び出し情報。Interaction token は永続化やログ出力をしない。 */
 export interface AiInteraction {
+  interactionId: Snowflake;
   applicationId: Snowflake;
   interactionToken: string;
   guildId: Snowflake;
@@ -67,6 +68,7 @@ export function parseAiInteraction(value: unknown): AiInteraction {
 
   try {
     return {
+      interactionId: toSnowflake(requireString(root.id)),
       applicationId: toSnowflake(requireString(root.application_id)),
       interactionToken: root.token,
       guildId: toSnowflake(requireString(root.guild_id)),

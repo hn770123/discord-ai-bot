@@ -1,6 +1,6 @@
 # Discord AI Bot
 
-Cloudflare Workers の HTTP Interaction と Cron Trigger で動作する、小規模な家族向け Discord AI Bot です。現在は開発基盤、D1 Repository、および署名検証と allowlist を備えた Discord Interaction 入口を提供します。
+Cloudflare Workers の HTTP Interaction と Cron Trigger で動作する、小規模な家族向け Discord AI Bot です。署名検証と allowlist を通過した `/ai` に対し、同一チャンネルの会話履歴、User Brief、現在日時を使った構造化 AI 応答を提供します。
 
 ## 必要な環境
 
@@ -51,6 +51,10 @@ Discord Developer Portal の Application に表示される Public Key を環境
 ```bash
 npx wrangler secret put DISCORD_PUBLIC_KEY --env preview
 npx wrangler secret put DISCORD_PUBLIC_KEY --env production
+npx wrangler secret put DISCORD_BOT_TOKEN --env preview
+npx wrangler secret put DISCORD_BOT_TOKEN --env production
+npx wrangler secret put OPENAI_API_KEY --env preview
+npx wrangler secret put OPENAI_API_KEY --env production
 ```
 
 デプロイ後、Developer Portal の **Interactions Endpoint URL** へ `https://<worker-host>/interactions` を設定します。Discord の検証用 PING を含め、このエンドポイントは有効な Ed25519 署名と5分以内の timestamp だけを受け付けます。
@@ -73,7 +77,7 @@ export DISCORD_COMMAND_SCOPE='global'
 npm run discord:register-command
 ```
 
-Bot Token はコマンド登録でのみ必要です。Interaction response の編集には Discord が発行した一時 token を使うため、Phase 2 の Worker へ Bot Token は渡しません。
+Bot Token はコマンド登録に加え、Worker が Channel Messages API から履歴を取得するためにも必要です。`OPENAI_MODEL` と初回 User の `DEFAULT_TIMEZONE` は秘密ではない環境別変数として `wrangler.jsonc` に定義し、Bot Token と OpenAI API Key は必ず Secret にします。
 
 ## D1 migration
 
@@ -122,7 +126,9 @@ npx wrangler d1 migrations apply discord-ai-bot-production --remote --env produc
 | `GET`  | `/health`       | Worker の正常性を JSON で返す                               |
 | `POST` | `/interactions` | Discord署名、Interaction種別、allowlistを検証して応答を返す |
 
-許可された `/ai` は3秒以内の初期応答に余裕を持たせるため即時 defer し、後続処理を Worker の `waitUntil()` へ登録します。AI 応答と Reminder 配信は後続 Phase で実装します。
+許可された `/ai` は3秒以内の初期応答に余裕を持たせるため即時 defer し、後続処理を Worker の `waitUntil()` へ登録します。後続処理は最大100件の同一 Guild／Channel の履歴、User Brief、UTC現在日時と timezone を使って OpenAI Responses API を1回呼び、検証済みの応答・Brief・Reminderだけを反映します。通常応答は `allowed_mentions.parse = []` のため、生成文中の `@everyone`、`@here`、ユーザーメンションは通知を発生させません。
+
+同じ Interaction が再処理された場合、Interaction ID を Reminder ID とすることで二重作成を抑止します。AI出力の取得または検証に失敗した場合は Brief、Reminder、checkpointを更新しません。Discord応答の編集に失敗した場合はDB更新済みでcheckpoint未更新となり、同一Interactionの再処理でReminderは重複せず、Briefは同じ値に収束します。運用時は秘密値や会話本文を表示せず、外部APIの状態コードとInteraction IDだけで障害箇所を調査してください。
 
 ## 公式仕様（2026-09-21 確認）
 
@@ -135,4 +141,8 @@ npx wrangler d1 migrations apply discord-ai-bot-production --remote --env produc
 - [D1 prepared statements](https://developers.cloudflare.com/d1/worker-api/prepared-statements/)
 - [Discord: Receiving and Responding to Interactions](https://docs.discord.com/developers/interactions/receiving-and-responding)
 - [Discord: Application Commands](https://docs.discord.com/developers/interactions/application-commands)
+- [Discord: Message / Get Channel Messages](https://docs.discord.com/developers/resources/message#get-channel-messages)
+- [Discord: Allowed Mentions](https://docs.discord.com/developers/resources/message#allowed-mentions-object)
 - [Cloudflare: Context (`waitUntil`)](https://developers.cloudflare.com/workers/runtime-apis/context/)
+- [OpenAI: Responses API](https://developers.openai.com/api/reference/resources/responses/methods/create)
+- [OpenAI: Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
