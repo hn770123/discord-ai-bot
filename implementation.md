@@ -24,6 +24,8 @@ Cron Trigger
 Discord Developer Portal で Interactions Endpoint URL に Worker のURLを設定する。
 Discordから届くHTTPリクエストは必ず署名検証する。
 
+署名は JSON parse 前の raw body に対して検証し、`X-Signature-Ed25519` と `X-Signature-Timestamp` の欠落・形式不正を同じ401応答で拒否する。リプレイ対策として、Worker時刻との差が5分を超える timestamp も拒否する。
+
 ```text
 DISCORD_APPLICATION_ID
 DISCORD_PUBLIC_KEY
@@ -45,6 +47,8 @@ Discord Interaction は初期応答を3秒以内に返す必要があるため�
 ```
 
 その後、履歴取得 → D1取得 → LLM → DB更新 → 元のInteraction Response編集、の順で処理する。
+
+拒否時は `flags: 64` の ephemeral message を返す。許可時は `type: 5` を返す前に後続 Promise を `ExecutionContext.waitUntil()` へ登録し、元応答は `PATCH /webhooks/{application.id}/{interaction.token}/messages/@original` で編集する。
 
 ## 4. 会話履歴取得
 Gatewayで常時監視しない。`/ai` が呼ばれた時点で Channel Messages API を使う。
@@ -173,5 +177,6 @@ Discord:
 
 Cloudflare:
 - https://developers.cloudflare.com/workers/
+- https://developers.cloudflare.com/workers/runtime-apis/context/
 - https://developers.cloudflare.com/d1/
 - https://developers.cloudflare.com/workers/configuration/cron-triggers/

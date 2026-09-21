@@ -1,21 +1,33 @@
-/**
- * Cloudflare Worker のエントリーポイント。
- * HTTP と Cron の境界だけを公開し、後続フェーズの Discord／D1 処理をここへ集約しない。
- */
+/** Cloudflare Worker のエントリーポイント。HTTP と Cron の境界だけを公開する。 */
+import { createDiscordClient } from './discord/client';
+import { handleInteraction } from './handlers/interaction';
 
 /** ヘルスチェックで返す固定レスポンス。秘密情報や環境固有値は含めない。 */
 const HEALTH_RESPONSE = Object.freeze({ status: 'ok' });
 
 /**
  * HTTP リクエストを処理する。
- * 現段階では GET /health のみを公開し、それ以外は情報を漏らさず 404 を返す。
+ * GET /health と署名検証付き POST /interactions だけを公開し、それ以外は404を返す。
  */
-function handleFetch(request: Request): Response {
+async function handleFetch(
+  request: Request,
+  env: Env,
+  context: ExecutionContext,
+): Promise<Response> {
   const url = new URL(request.url);
 
   if (request.method === 'GET' && url.pathname === '/health') {
     return Response.json(HEALTH_RESPONSE, {
       headers: { 'cache-control': 'no-store' },
+    });
+  }
+
+  if (request.method === 'POST' && url.pathname === '/interactions') {
+    return handleInteraction(request, {
+      db: env.DB,
+      publicKey: env.DISCORD_PUBLIC_KEY,
+      discord: createDiscordClient(),
+      context,
     });
   }
 
@@ -31,8 +43,8 @@ function handleScheduled(): void {
 }
 
 export default {
-  fetch(request: Request): Response {
-    return handleFetch(request);
+  fetch(request: Request, env: Env, context: ExecutionContext): Promise<Response> {
+    return handleFetch(request, env, context);
   },
   scheduled(controller: ScheduledController): void {
     // controller は後続 Phase で実行時刻や Cron 式の参照に使用する。

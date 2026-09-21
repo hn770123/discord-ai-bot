@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "wrangler dev --env local",
+    "discord:register-command": "node scripts/register-command.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

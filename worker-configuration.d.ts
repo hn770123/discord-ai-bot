@@ -2,6 +2,8 @@
 interface Env {
   DB: D1Database;
   ENVIRONMENT: 'local' | 'preview' | 'production';
+  /** Discord署名検証用の公開鍵。Bot Tokenとは異なり、受信リクエストの認証だけに使う。 */
+  DISCORD_PUBLIC_KEY: string;
   /** Vitestだけが注入するmigration。デプロイ環境では参照しない。 */
   TEST_MIGRATIONS?: import('cloudflare:test').D1Migration[];
 }
