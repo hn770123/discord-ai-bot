@@ -5,9 +5,14 @@ export interface AiClient {
   generate(prompt: string, now: Date): Promise<AiResult>;
 }
 
+export const OPENAI_API_TIMEOUT_MILLISECONDS = 30_000;
+
 /** APIエラーへレスポンス本文やAPI keyを含めない。 */
 export class AiApiError extends Error {
-  public constructor(public readonly status: number) {
+  public constructor(
+    public readonly status: number,
+    public readonly kind?: 'timeout' | 'network',
+  ) {
     super(`AI API request failed with status ${status}`);
     this.name = 'AiApiError';
   }
@@ -18,28 +23,36 @@ export function createOpenAiClient(
   apiKey: string,
   model: string,
   fetcher: typeof fetch = fetch,
+  timeoutMilliseconds = OPENAI_API_TIMEOUT_MILLISECONDS,
 ): AiClient {
   return {
     async generate(prompt, now): Promise<AiResult> {
-      const response = await fetcher('https://api.openai.com/v1/responses', {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${apiKey}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          model,
-          input: prompt,
-          text: {
-            format: {
-              type: 'json_schema',
-              name: 'discord_ai_result',
-              strict: true,
-              schema: AI_RESULT_JSON_SCHEMA,
-            },
+      let response: Response;
+      try {
+        response = await fetcher('https://api.openai.com/v1/responses', {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${apiKey}`,
+            'content-type': 'application/json',
           },
-        }),
-      });
+          signal: AbortSignal.timeout(timeoutMilliseconds),
+          body: JSON.stringify({
+            model,
+            input: prompt,
+            text: {
+              format: {
+                type: 'json_schema',
+                name: 'discord_ai_result',
+                strict: true,
+                schema: AI_RESULT_JSON_SCHEMA,
+              },
+            },
+          }),
+        });
+      } catch (error) {
+        const timedOut = error instanceof DOMException && error.name === 'TimeoutError';
+        throw new AiApiError(0, timedOut ? 'timeout' : 'network');
+      }
       if (!response.ok) throw new AiApiError(response.status);
       const payload: unknown = await response.json();
       const text = findOutputText(payload);

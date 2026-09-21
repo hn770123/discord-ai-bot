@@ -33,6 +33,8 @@ curl -i http://localhost:8787/health
 npm run check
 ```
 
+`check` は lint、format、typecheck、unit／integration test に加え、本番と同じSQLを空のD1へ適用するmigration検査まで実行します。外部サービスの資格情報やネットワーク接続は不要です。統合テストだけを再実行する場合は `npm run test:integration` を使います。
+
 ## 環境設定
 
 `wrangler.jsonc` は `local`、`preview`、`production` を分離し、各環境に `DB` D1 binding と Cron の雛形を定義しています。リポジトリ内の D1 ID は無効なプレースホルダーです。Preview／Production のデータベース作成後、それぞれの `database_id` を実 ID に置換してからデプロイしてください。
@@ -127,6 +129,8 @@ npx wrangler d1 migrations apply discord-ai-bot-production --remote --env produc
 | `POST` | `/interactions` | Discord署名、Interaction種別、allowlistを検証して応答を返す |
 
 許可された `/ai` は3秒以内の初期応答に余裕を持たせるため即時 defer し、後続処理を Worker の `waitUntil()` へ登録します。後続処理は最大100件の同一 Guild／Channel の履歴、User Brief、UTC現在日時と timezone を使って OpenAI Responses API を1回呼び、検証済みの応答・Brief・Reminderだけを反映します。通常応答は `allowed_mentions.parse = []` のため、生成文中の `@everyone`、`@here`、ユーザーメンションは通知を発生させません。
+
+Interaction body は64 KiB、入力prompt・AI応答・Brief・Reminder本文は各2000文字を上限とします。Discord APIは10秒、OpenAI Responses APIは30秒で打ち切り、失敗時はレスポンス本文を表示せずサービス別の安全な固定文を返します。構造化ログには `requestId`、`interactionId`、`reminderId` とエラー分類だけを記録し、token、API key、会話全文、Briefは記録しません。
 
 `/ai` の `action` では次の操作を選択できます。省略時は `chat` です。コマンド定義を更新した後は、登録スクリプトを再実行してください。
 

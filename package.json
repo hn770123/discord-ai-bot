@@ -15,7 +15,9 @@
     "format:check": "prettier --check .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "check": "npm run lint && npm run format:check && npm run typecheck && npm test"
+    "test:integration": "vitest run test/integration.test.ts",
+    "migration:check": "vitest run test/migrations.test.ts",
+    "check": "npm run lint && npm run format:check && npm run typecheck && npm test && npm run migration:check"
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "0.12.21",

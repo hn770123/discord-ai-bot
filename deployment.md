@@ -106,7 +106,7 @@ allowed_users
 ```bash
 npx wrangler secret put DISCORD_BOT_TOKEN
 npx wrangler secret put DISCORD_PUBLIC_KEY
-npx wrangler secret put LLM_API_KEY
+npx wrangler secret put OPENAI_API_KEY
 ```
 
 Application IDは秘密情報ではないため通常設定でもよい。
@@ -202,7 +202,40 @@ Discord投稿時は `allowed_mentions` を明示し、LLM生成文字列だけ�
 そのためGateway常時接続を維持するメリットが小さい。
 **HTTP Interaction + Discord REST API + D1 + Cron Trigger** に限定することで、Gateway接続・再接続・常駐プロセス監視を省く。
 
-## 12. 参考
+## 12. Previewスモークテスト
+
+Preview用Discord Application、D1、Secretsだけを使用し、Productionの値を流用しない。デプロイ対象SHAを記録してから次の順序で確認する。
+
+1. `npm ci && npm run check` を実行する。
+2. `npx wrangler d1 migrations list discord-ai-bot-preview --remote --env preview` で未適用分を確認し、`migrations apply` 後に再度一覧を確認する。
+3. `npx wrangler deploy --env preview` の出力にあるURLの `/health` が200と `cache-control: no-store` を返すことを確認する。
+4. Preview用ApplicationのInteraction Endpointを設定し、署名検証用PINGが成功することを確認する。
+5. 許可外Userで `/ai` を実行し、ephemeral拒否となり外部APIが呼ばれないことをログで確認する。
+6. 許可Userで基本会話、履歴0件、Reminder追加・一覧・取消を確認する。`@everyone` を含む応答でも通知されないことを確認する。
+7. 一時的に無効なOpenAI modelをPreviewだけへ指定し、安全なAIエラー文と `interaction.failed` ログを確認してから元へ戻す。
+8. Reminderを期限到来させ、成功時だけ `sent` になることと、本人向け以外でmentionがないことを確認する。
+9. `wrangler tail --env preview` で相関IDを検索し、token、key、会話全文、Briefが出力されていないことを確認する。
+
+## 13. Rollback
+
+WorkerコードはCloudflare dashboardのDeploymentsから直前の正常deploymentへ戻すか、記録済みの正常Git SHAをcheckoutして `npx wrangler deploy --env <environment>` で再デプロイする。rollback前に現在と復帰先のSHA、実行者、理由、時刻を障害記録へ残す。
+
+D1 migrationは原則として巻き戻さない。既存Workerが読み書きできるよう、migrationは列・テーブル追加を基本とし、削除・rename・制約強化は「新構造追加 → 両対応コード → データ移行 → 旧構造削除」の複数リリースに分割する。コードrollback時も新しいschemaを残す。誤データ更新がある場合は、対象範囲を確認してD1 backup／Time Travelから別DBへ復元し、検証後に人間の承認を得て復旧する。
+
+## 14. 障害対応表
+
+| 症状／ログ分類 | 主な確認箇所 | 対応 | 利用者への表示 |
+| --- | --- | --- | --- |
+| `openai` + `timeout`／`network`／`server` | OpenAI status、model設定、30秒上限 | 外部障害なら待機して再実行。継続時は正常SHAへrollback | AIサービス用の固定文 |
+| `openai` + `invalid_response` | Structured Output schema、model対応 | 保存がないことを確認し、model／prompt変更をrollback | AIサービス用の固定文 |
+| `discord` + `401`／`403` | Secret更新、Bot権限、Channel access | Tokenを値を表示せず再登録し、権限を修復 | Discord通信用の固定文 |
+| `discord` + `429`／`5xx` | Discord status、Reminderのattempt | Interactionは再実行、Reminderは自動backoffを監視 | Discord通信用の固定文 |
+| `worker` + `internal` | D1 status、migration一覧、相関ID | 書込段階とcheckpointを確認し、必要ならコードrollback | 一般的な固定文 |
+| Reminderが`processing`のまま | `lease_expires_at`、Cron、直前のDiscord投稿 | lease切れ後の再取得を確認。投稿済みなら二重送信リスクを評価 | 通常は表示なし |
+
+調査では相関IDと状態コードを使い、環境変数一覧、リクエスト本文、Interaction token、Briefを出力しない。秘密情報の露出が疑われる場合はログ保存範囲を限定して確認し、Discord Bot TokenとOpenAI API keyを失効・再発行してWorker Secretを更新する。
+
+## 15. 参考
 Discord:
 - https://docs.discord.com/developers/quick-start/getting-started
 - https://docs.discord.com/developers/interactions/receiving-and-responding

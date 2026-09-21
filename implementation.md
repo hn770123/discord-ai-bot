@@ -182,7 +182,25 @@ LLM失敗時にBriefやReminderを中途半端に更新しない。
 
 更新順序は「履歴 → checkpoint／User → LLM 1回 → 出力全体の検証 → Brief／Reminder → Discord応答 → checkpoint」とする。Reminderの主キーにはInteraction IDを使用し、再実行時のINSERTは `ON CONFLICT DO NOTHING` とする。LLM失敗時はUserの初期行以外を変更しない。Discord編集失敗時はcheckpointを進めないため履歴を失わず、再実行時のReminderは同じ主キーで重複しない。Discord成功後のcheckpoint保存失敗では次回履歴に直前のBot応答が再び含まれる可能性があるため、運用ではD1障害の解消後に再実行し、必要なら対象Channelのcheckpointを成功したBot Message IDへ修復する。
 
-## 12. 参考
+### 11.1 制限とtimeout
+
+- Interaction raw body: 64 KiB。`Content-Length` と実際のUTF-8 byte数の両方で検査し、超過時は署名検証前に413を返す
+- Channel履歴: Discordへの1リクエスト、最大100件
+- prompt、AI応答、Brief、Reminder本文: 各2000文字
+- Discord REST API: 10秒
+- OpenAI Responses API: 30秒
+
+外部APIのtimeout／通信例外は専用エラーへ変換し、URL、HTTP本文、入力文を例外へ含めない。AI失敗、Discord失敗、その他の内部失敗は利用者向けの固定文へ分類する。詳細な例外メッセージをInteraction responseへ転記しない。
+
+### 11.2 構造化ログ
+
+ログはJSON 1行形式とし、イベント名に `requestId`、`interactionId`、または `reminderId` を関連付ける。外部APIについて記録可能なのはサービス名、HTTP status、`timeout`／`network`／`rate_limited`／`client`／`server`／`invalid_response` の分類だけとする。Interaction token、Bot token、API key、会話本文、User Brief、外部APIレスポンス本文はログ関数の入力型にも含めない。
+
+## 12. 統合テスト
+
+`test/integration.test.ts` はテスト用Ed25519鍵でInteractionを署名し、実際の署名検証・allowlist・defer・AI workflow・D1 repositoryを通す。Discord REST APIとOpenAI Responses APIだけをURL別fetch routerで置換し、HTTP request形式、Structured Output、mention抑止、checkpoint保存を一連で検証する。CIでは単体テストと同じWorkers runtime内で動かし、実tokenや外部通信を必要としない。
+
+## 13. 参考
 Discord:
 - https://docs.discord.com/developers/interactions/receiving-and-responding
 - https://docs.discord.com/developers/resources/message

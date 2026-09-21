@@ -46,6 +46,23 @@ describe('Discord client', () => {
     ).rejects.toEqual(new DiscordApiError(500));
   });
 
+  /** 通信timeoutをレスポンス本文のない分類済みエラーへ変換する。 */
+  it('classifies a request timeout without leaking request data', async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockRejectedValue(new DOMException('secret URL and body', 'TimeoutError'));
+    const client = createDiscordClient('bot-token', fetcher, 1);
+
+    await expect(
+      client.editOriginalInteractionResponse({
+        applicationId: toSnowflake('100000000000000001'),
+        interactionToken: 'secret-token',
+        content: 'secret-content',
+      }),
+    ).rejects.toMatchObject({ status: 0, kind: 'timeout' });
+    expect(fetcher.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
+  });
+
   /** 履歴取得では100件上限とcheckpointを指定し、別Channelの応答を拒否する。 */
   it('gets at most 100 messages after the checkpoint and verifies context', async () => {
     const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
