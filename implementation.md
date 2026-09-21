@@ -141,13 +141,20 @@ User BriefだけはDiscord User単位で共有可能。
 Cloudflare Cron Trigger で期限到来分を処理する。
 
 ```sql
-SELECT * FROM reminders
-WHERE remind_at <= ? AND status = 'pending'
-ORDER BY remind_at
+SELECT id FROM reminders
+WHERE (status = 'pending' AND next_attempt_at <= ?)
+   OR (status = 'processing' AND lease_expires_at <= ?)
+ORDER BY next_attempt_at
 LIMIT 100;
 ```
 
-送信後は `sent` にする。重複送信対策として `status` と `sent_at` を持つ。
+候補取得後、同じ期限条件を持つ `UPDATE` で60秒のleaseを獲得する。並行Cronが同じ候補を読んでも、条件付き更新の `meta.changes = 1` を得た実行だけが投稿する。Discord投稿成功後にだけ `sent` にし、投稿前に送信済みとは扱わない。Workerが投稿成功直後かつDB更新前に停止した場合はlease切れ後の再送余地があるため、外部APIを含む完全なexactly-onceではなく通常時の重複抑止として扱う。
+
+HTTP 408、429、5xxと通信例外は指数バックオフで `pending` へ戻し、最大5回で `failed` にする。それ以外の4xxは恒久エラーとして初回で `failed` にする。`last_error` にはレスポンス本文やtokenを保存せず、状態コードの分類だけを記録する。
+
+管理操作は `/ai action:list` と `/ai action:cancel reminder_id:<ID>` で提供する。一覧とキャンセルのSQLはどちらも `created_by_user_id` と `guild_id` を必須条件とし、キャンセルは物理削除せず `pending` から `cancelled` へ遷移する。本人向けReminderの `target_user_id` は作成者本人だけをRepositoryでも許可する。
+
+チャンネル通知は `allowed_mentions: { parse: [] }`、本人向け通知は本文先頭へ `<@USER_ID>` を付け、`allowed_mentions: { parse: [], users: [USER_ID] }` を送る。Reminder本文内の他のmentionは通知されない。
 
 ## 10. D1の役割
 主に保持するもの:

@@ -28,6 +28,9 @@ export async function processAiInteraction(
   interaction: AiInteraction,
   dependencies: AiWorkflowDependencies,
 ): Promise<void> {
+  if (interaction.operation !== 'chat') {
+    throw new TypeError('Chat operation is required');
+  }
   const checkpoints = new CheckpointsRepository(dependencies.db);
   const users = new UsersRepository(dependencies.db);
   const reminders = new RemindersRepository(dependencies.db);

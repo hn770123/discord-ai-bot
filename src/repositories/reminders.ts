@@ -74,6 +74,9 @@ export class RemindersRepository {
     if (input.message.trim().length === 0) {
       throw new TypeError('Reminder message must not be empty');
     }
+    if (input.targetUserId !== null && input.targetUserId !== input.createdByUserId) {
+      throw new TypeError('Reminder target must be its creator');
+    }
 
     const result = await this.db
       .prepare(
@@ -98,6 +101,99 @@ export class RemindersRepository {
       .run();
 
     return result.meta.changes === 1;
+  }
+
+  /** 作成者かつ同一GuildのReminderだけを、管理画面向けに新しい順で返す。 */
+  public async listForCreatorInGuild(
+    createdByUserId: Snowflake,
+    guildId: Snowflake,
+    limit = 20,
+  ): Promise<Reminder[]> {
+    const safeLimit = Math.max(1, Math.min(50, Math.trunc(limit)));
+    const result = await this.db
+      .prepare(
+        `SELECT id, created_by_user_id, target_user_id, guild_id, channel_id, message,
+                remind_at, status, attempt_count, next_attempt_at, lease_expires_at,
+                created_at, sent_at, last_error
+         FROM reminders
+         WHERE created_by_user_id = ? AND guild_id = ?
+         ORDER BY remind_at DESC, id DESC
+         LIMIT ?`,
+      )
+      .bind(createdByUserId, guildId, safeLimit)
+      .all<ReminderRow>();
+    return result.results.map(mapReminder);
+  }
+
+  /** pending の予定だけを、作成者とGuildを条件に論理削除する。 */
+  public async cancelForCreatorInGuild(
+    id: string,
+    createdByUserId: Snowflake,
+    guildId: Snowflake,
+  ): Promise<boolean> {
+    const result = await this.db
+      .prepare(
+        `UPDATE reminders
+         SET status = 'cancelled', lease_expires_at = NULL
+         WHERE id = ? AND created_by_user_id = ? AND guild_id = ? AND status = 'pending'`,
+      )
+      .bind(id, createdByUserId, guildId)
+      .run();
+    return result.meta.changes === 1;
+  }
+
+  /**
+   * 期限到来またはlease切れの候補を条件付き更新で獲得する。
+   * SELECT が競合しても UPDATE に成功した実行だけが返すため、同時Cronの通常二重送信を防ぐ。
+   */
+  public async claimDue(
+    now: UtcDateTime,
+    leaseExpiresAt: UtcDateTime,
+    limit: number,
+  ): Promise<Reminder[]> {
+    const safeLimit = Math.max(1, Math.min(100, Math.trunc(limit)));
+    const candidates = await this.db
+      .prepare(
+        `SELECT id FROM reminders
+         WHERE (status = 'pending' AND next_attempt_at <= ?)
+            OR (status = 'processing' AND lease_expires_at <= ?)
+         ORDER BY next_attempt_at, id
+         LIMIT ?`,
+      )
+      .bind(now, now, safeLimit)
+      .all<{ id: string }>();
+    const claimed: Reminder[] = [];
+    for (const candidate of candidates.results) {
+      const result = await this.db
+        .prepare(
+          `UPDATE reminders
+           SET status = 'processing', attempt_count = attempt_count + 1,
+               lease_expires_at = ?, last_error = NULL
+           WHERE id = ?
+             AND ((status = 'pending' AND next_attempt_at <= ?)
+               OR (status = 'processing' AND lease_expires_at <= ?))`,
+        )
+        .bind(leaseExpiresAt, candidate.id, now, now)
+        .run();
+      if (result.meta.changes !== 1) continue;
+      const row = await this.findById(candidate.id);
+      if (row !== null) claimed.push(row);
+    }
+    return claimed;
+  }
+
+  /** Cron内部で獲得済みReminderを再取得する。外部の管理操作には公開しない。 */
+  private async findById(id: string): Promise<Reminder | null> {
+    const row = await this.db
+      .prepare(
+        `SELECT id, created_by_user_id, target_user_id, guild_id, channel_id, message,
+                remind_at, status, attempt_count, next_attempt_at, lease_expires_at,
+                created_at, sent_at, last_error
+         FROM reminders WHERE id = ?`,
+      )
+      .bind(id)
+      .first<ReminderRow>();
+    return row === null ? null : mapReminder(row);
   }
 
   /** IDだけでなくGuild／Channelも一致したReminderだけを返す。 */

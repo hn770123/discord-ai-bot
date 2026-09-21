@@ -3,6 +3,8 @@ import { createDiscordClient } from './discord/client';
 import { createOpenAiClient } from './ai/client';
 import { processAiInteraction } from './handlers/ai';
 import { handleInteraction } from './handlers/interaction';
+import { processReminderManagement } from './handlers/reminder-management';
+import { processScheduledReminders } from './handlers/scheduled';
 
 /** ヘルスチェックで返す固定レスポンス。秘密情報や環境固有値は含めない。 */
 const HEALTH_RESPONSE = Object.freeze({ status: 'ok' });
@@ -33,12 +35,15 @@ async function handleFetch(
       discord,
       context,
       executeAi: (interaction) =>
-        processAiInteraction(interaction, {
-          db: env.DB,
-          discord,
-          ai,
-          defaultTimezone: env.DEFAULT_TIMEZONE,
-        }).catch(async () => {
+        (interaction.operation === 'chat'
+          ? processAiInteraction(interaction, {
+              db: env.DB,
+              discord,
+              ai,
+              defaultTimezone: env.DEFAULT_TIMEZONE,
+            })
+          : processReminderManagement(interaction, { db: env.DB, discord })
+        ).catch(async () => {
           // 外部APIや検証の詳細を漏らさず、可能な場合だけdefer済み応答を安全な文面へ置き換える。
           await discord.editOriginalInteractionResponse({
             applicationId: interaction.applicationId,
@@ -53,20 +58,21 @@ async function handleFetch(
 }
 
 /**
- * Cron Trigger を受け取る最小ハンドラー。
- * Reminder 配信は後続フェーズで実装するため、現時点では副作用を発生させない。
+ * Cron Trigger の実行時刻を基準に、期限到来Reminderを上限件数ずつ配信する。
  */
-function handleScheduled(): void {
-  // Phase 0 ではハンドラーが正常に呼び出せることだけを保証する。
+function handleScheduled(env: Env, scheduledTime: number): Promise<void> {
+  return processScheduledReminders({
+    db: env.DB,
+    discord: createDiscordClient(env.DISCORD_BOT_TOKEN),
+    now: () => new Date(scheduledTime),
+  });
 }
 
 export default {
   fetch(request: Request, env: Env, context: ExecutionContext): Promise<Response> {
     return handleFetch(request, env, context);
   },
-  scheduled(controller: ScheduledController): void {
-    // controller は後続 Phase で実行時刻や Cron 式の参照に使用する。
-    void controller;
-    handleScheduled();
+  scheduled(controller: ScheduledController, env: Env, context: ExecutionContext): void {
+    context.waitUntil(handleScheduled(env, controller.scheduledTime));
   },
 } satisfies ExportedHandler<Env>;

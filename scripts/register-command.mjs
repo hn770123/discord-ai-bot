@@ -23,11 +23,29 @@ const command = {
   type: 1,
   options: [
     {
+      name: 'action',
+      description: '会話、予定一覧、予定削除を選びます',
+      type: 3,
+      required: false,
+      choices: [
+        { name: '会話', value: 'chat' },
+        { name: '予定一覧', value: 'list' },
+        { name: '予定削除', value: 'cancel' },
+      ],
+    },
+    {
       name: 'prompt',
       description: 'AIへの依頼内容',
       type: 3,
       required: false,
       max_length: 2000,
+    },
+    {
+      name: 'reminder_id',
+      description: '予定削除で表示された予定ID',
+      type: 3,
+      required: false,
+      max_length: 64,
     },
   ],
 };

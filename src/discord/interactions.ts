@@ -20,6 +20,8 @@ export interface AiInteraction {
   channelId: Snowflake;
   userId: Snowflake;
   prompt: string | null;
+  operation: 'chat' | 'list' | 'cancel';
+  reminderId: string | null;
 }
 
 /** JSON入力の構造不正を HTTP 400 として扱うためのエラー。 */
@@ -66,6 +68,16 @@ export function parseAiInteraction(value: unknown): AiInteraction {
     prompt = option.value;
   }
 
+  const actionOption = findStringOption(options, 'action', 16);
+  const operation = actionOption ?? 'chat';
+  if (operation !== 'chat' && operation !== 'list' && operation !== 'cancel') {
+    throw new InvalidInteractionError();
+  }
+  const reminderId = findStringOption(options, 'reminder_id', 64);
+  if (operation === 'cancel' && reminderId === null) throw new InvalidInteractionError();
+  if (operation !== 'cancel' && reminderId !== null) throw new InvalidInteractionError();
+  if (operation !== 'chat' && prompt !== null) throw new InvalidInteractionError();
+
   try {
     return {
       interactionId: toSnowflake(requireString(root.id)),
@@ -75,10 +87,35 @@ export function parseAiInteraction(value: unknown): AiInteraction {
       channelId: toSnowflake(requireString(root.channel_id)),
       userId: toSnowflake(requireString(user.id)),
       prompt,
+      operation,
+      reminderId,
     };
   } catch {
     throw new InvalidInteractionError();
   }
+}
+
+/** 任意の文字列optionを取得し、重複・型不正・過長値を拒否する。 */
+function findStringOption(options: unknown[], name: string, maximum: number): string | null {
+  const matches = options.filter(
+    (option) =>
+      typeof option === 'object' &&
+      option !== null &&
+      !Array.isArray(option) &&
+      (option as Record<string, unknown>).name === name,
+  );
+  if (matches.length === 0) return null;
+  if (matches.length !== 1) throw new InvalidInteractionError();
+  const option = asRecord(matches[0]);
+  if (
+    option.type !== 3 ||
+    typeof option.value !== 'string' ||
+    option.value.trim().length === 0 ||
+    option.value.length > maximum
+  ) {
+    throw new InvalidInteractionError();
+  }
+  return option.value;
 }
 
 /** object 以外の値を一律で拒否し、プロパティ参照を安全にする。 */
