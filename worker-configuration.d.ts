@@ -2,4 +2,11 @@
 interface Env {
   DB: D1Database;
   ENVIRONMENT: 'local' | 'preview' | 'production';
+  /** Vitestだけが注入するmigration。デプロイ環境では参照しない。 */
+  TEST_MIGRATIONS?: import('cloudflare:test').D1Migration[];
+}
+
+// cloudflare:test の env proxy にWorker bindingの型を伝え、実DBと同じ契約でテストする。
+declare module 'cloudflare:test' {
+  interface ProvidedEnv extends Env {}
 }
