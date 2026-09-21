@@ -123,10 +123,13 @@ Scheduled Message用に、たとえば1分ごとのCronを設定する。
 Cloudflare CronはUTC基準。Reminder時刻はUTCまたはoffset付き日時へ正規化する。
 Cronの役割は通常会話取得ではなく、Scheduled Message配信だけに限定する。
 
+配信処理は1回最大100件、60秒のlease、最大5試行で動作する。PreviewではDiscordの一時エラー後に `pending` と `next_attempt_at` が更新されること、恒久的な4xxでは `failed` となること、成功時だけ `sent_at` が設定されることを確認する。送信成功直後かつD1更新前の停止では再送の可能性があるため、必要に応じて `reminders` の状態と対象チャンネルを照合する。
+
 ## 7. Slash Command登録
 Application Command APIで `/ai` を登録する。
 開発中はGuild Commandとして登録すると反映確認がしやすい。
 自家用Botなら許可Guildだけを対象にGuild Commandのままでもよい。
+Phase 4以降は `action` に `chat`／`list`／`cancel` があり、削除時は一覧に表示された `reminder_id` を渡す。コマンド定義の変更後は登録スクリプトを再実行する。
 
 ## 8. デプロイ
 ```bash

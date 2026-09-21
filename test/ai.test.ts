@@ -114,6 +114,7 @@ describe('AI workflow', () => {
     const discord: DiscordClient = {
       listChannelMessages: vi.fn().mockResolvedValue([]),
       editOriginalInteractionResponse: editResponse,
+      createChannelMessage: vi.fn(),
     };
     const ai: AiClient = {
       generate: vi.fn().mockResolvedValue({
@@ -130,6 +131,8 @@ describe('AI workflow', () => {
       channelId,
       userId,
       prompt: '起こして',
+      operation: 'chat' as const,
+      reminderId: null,
     };
     const dependencies = { db: env.DB, discord, ai, defaultTimezone: 'Asia/Tokyo', now: () => NOW };
 
@@ -155,6 +158,7 @@ describe('AI workflow', () => {
     const discord: DiscordClient = {
       listChannelMessages: vi.fn().mockResolvedValue([]),
       editOriginalInteractionResponse: editResponse,
+      createChannelMessage: vi.fn(),
     };
     const ai: AiClient = { generate: vi.fn().mockRejectedValue(new Error('invalid output')) };
     await expect(
@@ -167,6 +171,8 @@ describe('AI workflow', () => {
           channelId: toSnowflake('810000000000000032'),
           userId: failingUser,
           prompt: null,
+          operation: 'chat',
+          reminderId: null,
         },
         { db: env.DB, discord, ai, defaultTimezone: 'UTC', now: () => NOW },
       ),

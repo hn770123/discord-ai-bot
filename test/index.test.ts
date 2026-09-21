@@ -2,8 +2,20 @@
  * Worker エントリーポイントの契約テスト。
  * 外部サービスやシークレットなしで HTTP と Cron の最小境界を検証する。
  */
-import { SELF, createScheduledController } from 'cloudflare:test';
-import { describe, expect, it } from 'vitest';
+import {
+  SELF,
+  createExecutionContext,
+  createScheduledController,
+  env,
+  waitOnExecutionContext,
+  applyD1Migrations,
+} from 'cloudflare:test';
+import { beforeAll, describe, expect, it } from 'vitest';
+
+beforeAll(async () => {
+  if (env.TEST_MIGRATIONS === undefined) throw new Error('TEST_MIGRATIONS binding is required');
+  await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+});
 
 describe('Worker', () => {
   /** 正常性監視が利用する JSON とキャッシュ方針を確認する。 */
@@ -28,6 +40,8 @@ describe('Worker', () => {
     const worker = await import('../src/index');
     const controller = createScheduledController({ cron: '* * * * *' });
 
-    expect(() => worker.default.scheduled(controller)).not.toThrow();
+    const context = createExecutionContext();
+    expect(() => worker.default.scheduled(controller, env, context)).not.toThrow();
+    await waitOnExecutionContext(context);
   });
 });

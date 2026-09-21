@@ -27,9 +27,18 @@ export interface ListChannelMessagesInput {
   after?: Snowflake;
 }
 
+/** Cron から通常の Channel Message を投稿するための入力。 */
+export interface CreateChannelMessageInput {
+  channelId: Snowflake;
+  content: string;
+  /** null はチャンネル通知、指定時はその利用者だけを通知する。 */
+  targetUserId: Snowflake | null;
+}
+
 export interface DiscordClient {
   listChannelMessages(input: ListChannelMessagesInput): Promise<DiscordMessage[]>;
   editOriginalInteractionResponse(input: EditInteractionResponseInput): Promise<Snowflake>;
+  createChannelMessage(input: CreateChannelMessageInput): Promise<Snowflake>;
 }
 
 /** Discord API の失敗を秘密情報を含まない状態コードだけで通知する。 */
@@ -73,6 +82,36 @@ export function createDiscordClient(
           allowed_mentions: { parse: [] },
         }),
       });
+      if (!response.ok) throw new DiscordApiError(response.status);
+      const value: unknown = await response.json();
+      if (typeof value !== 'object' || value === null || !('id' in value)) {
+        throw new DiscordApiError(502);
+      }
+      return toSnowflake(String(value.id));
+    },
+
+    /** LLM本文中のmentionを無効化し、本人向けの場合だけ明示したUser IDを許可する。 */
+    async createChannelMessage(input): Promise<Snowflake> {
+      const response = await fetcher(
+        `https://discord.com/api/v10/channels/${input.channelId}/messages`,
+        {
+          method: 'POST',
+          headers: {
+            authorization: `Bot ${botToken}`,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            content:
+              input.targetUserId === null
+                ? input.content
+                : `<@${input.targetUserId}> ${input.content}`,
+            allowed_mentions:
+              input.targetUserId === null
+                ? { parse: [] }
+                : { parse: [], users: [input.targetUserId] },
+          }),
+        },
+      );
       if (!response.ok) throw new DiscordApiError(response.status);
       const value: unknown = await response.json();
       if (typeof value !== 'object' || value === null || !('id' in value)) {

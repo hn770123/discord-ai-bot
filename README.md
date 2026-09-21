@@ -128,6 +128,16 @@ npx wrangler d1 migrations apply discord-ai-bot-production --remote --env produc
 
 許可された `/ai` は3秒以内の初期応答に余裕を持たせるため即時 defer し、後続処理を Worker の `waitUntil()` へ登録します。後続処理は最大100件の同一 Guild／Channel の履歴、User Brief、UTC現在日時と timezone を使って OpenAI Responses API を1回呼び、検証済みの応答・Brief・Reminderだけを反映します。通常応答は `allowed_mentions.parse = []` のため、生成文中の `@everyone`、`@here`、ユーザーメンションは通知を発生させません。
 
+`/ai` の `action` では次の操作を選択できます。省略時は `chat` です。コマンド定義を更新した後は、登録スクリプトを再実行してください。
+
+| action   | 入力          | 動作                                                  |
+| -------- | ------------- | ----------------------------------------------------- |
+| `chat`   | `prompt`      | AIとの会話と、構造化出力による予定追加                |
+| `list`   | なし          | 実行者が同じGuildで作成した予定を最大20件表示         |
+| `cancel` | `reminder_id` | 実行者が同じGuildで作成した未処理予定を論理キャンセル |
+
+Cron は1回につき最大100件を処理します。期限到来分を60秒の lease で獲得してから投稿し、成功後にだけ `sent` へ更新します。HTTP 408、429、5xx と通信失敗は指数バックオフで最大5回まで再試行し、それ以外のDiscord 4xxまたは試行上限到達は `failed` として停止します。チャンネル通知は全mentionを無効化し、本人向け通知だけは作成者IDを `allowed_mentions.users` へ明示します。
+
 同じ Interaction が再処理された場合、Interaction ID を Reminder ID とすることで二重作成を抑止します。AI出力の取得または検証に失敗した場合は Brief、Reminder、checkpointを更新しません。Discord応答の編集に失敗した場合はDB更新済みでcheckpoint未更新となり、同一Interactionの再処理でReminderは重複せず、Briefは同じ値に収束します。運用時は秘密値や会話本文を表示せず、外部APIの状態コードとInteraction IDだけで障害箇所を調査してください。
 
 ## 公式仕様（2026-09-21 確認）
@@ -139,10 +149,12 @@ npx wrangler d1 migrations apply discord-ai-bot-production --remote --env produc
 - [D1 migrations](https://developers.cloudflare.com/d1/reference/migrations/)
 - [D1 Database API](https://developers.cloudflare.com/d1/worker-api/d1-database/)
 - [D1 prepared statements](https://developers.cloudflare.com/d1/worker-api/prepared-statements/)
+- [D1 returned metadata](https://developers.cloudflare.com/d1/worker-api/return-object/)
 - [Discord: Receiving and Responding to Interactions](https://docs.discord.com/developers/interactions/receiving-and-responding)
 - [Discord: Application Commands](https://docs.discord.com/developers/interactions/application-commands)
 - [Discord: Message / Get Channel Messages](https://docs.discord.com/developers/resources/message#get-channel-messages)
 - [Discord: Allowed Mentions](https://docs.discord.com/developers/resources/message#allowed-mentions-object)
+- [Discord: HTTP response codes](https://docs.discord.com/developers/topics/opcodes-and-status-codes#http-http-response-codes)
 - [Cloudflare: Context (`waitUntil`)](https://developers.cloudflare.com/workers/runtime-apis/context/)
 - [OpenAI: Responses API](https://developers.openai.com/api/reference/resources/responses/methods/create)
 - [OpenAI: Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)

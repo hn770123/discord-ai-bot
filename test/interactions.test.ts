@@ -111,7 +111,11 @@ describe('Interaction handler', () => {
     const response = await handleInteraction(signed.request, {
       db: createDb(false, vi.fn()),
       publicKey: signed.publicKey,
-      discord: { listChannelMessages: vi.fn(), editOriginalInteractionResponse: vi.fn() },
+      discord: {
+        listChannelMessages: vi.fn(),
+        editOriginalInteractionResponse: vi.fn(),
+        createChannelMessage: vi.fn(),
+      },
       context: { waitUntil: vi.fn() },
       now: NOW,
     });
@@ -128,7 +132,11 @@ describe('Interaction handler', () => {
       {
         db: createDb(true, queried),
         publicKey: '00'.repeat(32),
-        discord: { listChannelMessages: vi.fn(), editOriginalInteractionResponse: vi.fn() },
+        discord: {
+          listChannelMessages: vi.fn(),
+          editOriginalInteractionResponse: vi.fn(),
+          createChannelMessage: vi.fn(),
+        },
         context: { waitUntil: vi.fn() },
         now: NOW,
       },
@@ -147,7 +155,11 @@ describe('Interaction handler', () => {
     const response = await handleInteraction(signed.request, {
       db: createDb(false, vi.fn()),
       publicKey: signed.publicKey,
-      discord: { listChannelMessages: vi.fn(), editOriginalInteractionResponse: edit },
+      discord: {
+        listChannelMessages: vi.fn(),
+        editOriginalInteractionResponse: edit,
+        createChannelMessage: vi.fn(),
+      },
       context: { waitUntil },
       processAi,
       now: NOW,
@@ -172,7 +184,11 @@ describe('Interaction handler', () => {
     const response = await handleInteraction(signed.request, {
       db: createDb(true, vi.fn()),
       publicKey: signed.publicKey,
-      discord: { listChannelMessages: vi.fn(), editOriginalInteractionResponse: edit },
+      discord: {
+        listChannelMessages: vi.fn(),
+        editOriginalInteractionResponse: edit,
+        createChannelMessage: vi.fn(),
+      },
       context: { waitUntil: (promise) => pending.push(promise) },
       processAi: (interaction) => Promise.resolve(`受信: ${interaction.prompt}`),
       now: NOW,
