@@ -31,3 +31,5 @@ jobs:
         run: npm run typecheck
       - name: Test
         run: npm test
+      - name: Check migrations from an empty database
+        run: npm run migration:check

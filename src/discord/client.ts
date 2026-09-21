@@ -41,9 +41,14 @@ export interface DiscordClient {
   createChannelMessage(input: CreateChannelMessageInput): Promise<Snowflake>;
 }
 
+export const DISCORD_API_TIMEOUT_MILLISECONDS = 10_000;
+
 /** Discord API の失敗を秘密情報を含まない状態コードだけで通知する。 */
 export class DiscordApiError extends Error {
-  public constructor(public readonly status: number) {
+  public constructor(
+    public readonly status: number,
+    public readonly kind?: 'timeout' | 'network',
+  ) {
     super(`Discord API request failed with status ${status}`);
     this.name = 'DiscordApiError';
   }
@@ -53,14 +58,27 @@ export class DiscordApiError extends Error {
 export function createDiscordClient(
   botToken: string,
   fetcher: typeof fetch = fetch,
+  timeoutMilliseconds = DISCORD_API_TIMEOUT_MILLISECONDS,
 ): DiscordClient {
+  /** Discord 通信例外を、tokenやURLを含まない型へ正規化する。 */
+  const request = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    try {
+      return await fetcher(input, {
+        ...init,
+        signal: AbortSignal.timeout(timeoutMilliseconds),
+      });
+    } catch (error) {
+      const timedOut = error instanceof DOMException && error.name === 'TimeoutError';
+      throw new DiscordApiError(0, timedOut ? 'timeout' : 'network');
+    }
+  };
   return {
     /** 最大100件だけを取得し、レスポンスのテナント境界を呼び出し元の値と照合する。 */
     async listChannelMessages(input): Promise<DiscordMessage[]> {
       const url = new URL(`https://discord.com/api/v10/channels/${input.channelId}/messages`);
       url.searchParams.set('limit', '100');
       if (input.after !== undefined) url.searchParams.set('after', input.after);
-      const response = await fetcher(url, {
+      const response = await request(url, {
         headers: { authorization: `Bot ${botToken}` },
       });
       if (!response.ok) throw new DiscordApiError(response.status);
@@ -73,7 +91,7 @@ export function createDiscordClient(
     /** 編集後の Message ID を返し、成功した AI 参加位置だけを checkpoint 化できるようにする。 */
     async editOriginalInteractionResponse(input): Promise<Snowflake> {
       const url = `https://discord.com/api/v10/webhooks/${input.applicationId}/${encodeURIComponent(input.interactionToken)}/messages/@original`;
-      const response = await fetcher(url, {
+      const response = await request(url, {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -92,7 +110,7 @@ export function createDiscordClient(
 
     /** LLM本文中のmentionを無効化し、本人向けの場合だけ明示したUser IDを許可する。 */
     async createChannelMessage(input): Promise<Snowflake> {
-      const response = await fetcher(
+      const response = await request(
         `https://discord.com/api/v10/channels/${input.channelId}/messages`,
         {
           method: 'POST',

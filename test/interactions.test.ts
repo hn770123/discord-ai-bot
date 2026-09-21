@@ -4,6 +4,7 @@
  */
 import { describe, expect, it, vi } from 'vitest';
 import { handleInteraction } from '../src/handlers/interaction';
+import { MAX_INTERACTION_BODY_BYTES } from '../src/handlers/interaction';
 import { verifyDiscordSignature } from '../src/discord/signature';
 import type { DiscordClient } from '../src/discord/client';
 
@@ -105,6 +106,31 @@ describe('Discord signature', () => {
 });
 
 describe('Interaction handler', () => {
+  /** 巨大bodyは署名検証やD1処理へ進めず、アプリケーション上限で拒否する。 */
+  it('rejects an oversized request body', async () => {
+    const queried = vi.fn();
+    const response = await handleInteraction(
+      new Request('https://worker.example/interactions', {
+        method: 'POST',
+        body: 'x'.repeat(MAX_INTERACTION_BODY_BYTES + 1),
+      }),
+      {
+        db: createDb(true, queried),
+        publicKey: '00'.repeat(32),
+        discord: {
+          listChannelMessages: vi.fn(),
+          editOriginalInteractionResponse: vi.fn(),
+          createChannelMessage: vi.fn(),
+        },
+        context: { waitUntil: vi.fn() },
+        now: NOW,
+      },
+    );
+
+    expect(response.status).toBe(413);
+    expect(queried).not.toHaveBeenCalled();
+  });
+
   /** DiscordのEndpoint検証で使われるPINGへ、署名検証後にPONGを返す。 */
   it('responds to a signed PING', async () => {
     const signed = await createSignedRequest('{"type":1}');

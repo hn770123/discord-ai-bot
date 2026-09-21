@@ -5,6 +5,8 @@ import { processAiInteraction } from './handlers/ai';
 import { handleInteraction } from './handlers/interaction';
 import { processReminderManagement } from './handlers/reminder-management';
 import { processScheduledReminders } from './handlers/scheduled';
+import { classifyFailure } from './domain/failures';
+import { createLogger } from './observability/logger';
 
 /** ヘルスチェックで返す固定レスポンス。秘密情報や環境固有値は含めない。 */
 const HEALTH_RESPONSE = Object.freeze({ status: 'ok' });
@@ -19,6 +21,8 @@ async function handleFetch(
   context: ExecutionContext,
 ): Promise<Response> {
   const url = new URL(request.url);
+  const requestId = crypto.randomUUID();
+  const logger = createLogger();
 
   if (request.method === 'GET' && url.pathname === '/health') {
     return Response.json(HEALTH_RESPONSE, {
@@ -34,23 +38,57 @@ async function handleFetch(
       publicKey: env.DISCORD_PUBLIC_KEY,
       discord,
       context,
-      executeAi: (interaction) =>
-        (interaction.operation === 'chat'
-          ? processAiInteraction(interaction, {
-              db: env.DB,
-              discord,
-              ai,
-              defaultTimezone: env.DEFAULT_TIMEZONE,
-            })
-          : processReminderManagement(interaction, { db: env.DB, discord })
-        ).catch(async () => {
-          // 外部APIや検証の詳細を漏らさず、可能な場合だけdefer済み応答を安全な文面へ置き換える。
-          await discord.editOriginalInteractionResponse({
-            applicationId: interaction.applicationId,
-            interactionToken: interaction.interactionToken,
-            content: '処理中に問題が発生しました。時間をおいてもう一度お試しください。',
+      executeAi: (interaction) => {
+        logger.info('interaction.accepted', {
+          requestId,
+          interactionId: interaction.interactionId,
+          outcome: 'accepted',
+        });
+        return (
+          interaction.operation === 'chat'
+            ? processAiInteraction(interaction, {
+                db: env.DB,
+                discord,
+                ai,
+                defaultTimezone: env.DEFAULT_TIMEZONE,
+              })
+            : processReminderManagement(interaction, { db: env.DB, discord })
+        )
+          .then(() => {
+            logger.info('interaction.completed', {
+              requestId,
+              interactionId: interaction.interactionId,
+              outcome: 'succeeded',
+            });
+          })
+          .catch(async (error: unknown) => {
+            // 例外本文は記録せず、分類済みのサービス・状態だけを相関IDへ結び付ける。
+            const failure = classifyFailure(error);
+            logger.error('interaction.failed', {
+              requestId,
+              interactionId: interaction.interactionId,
+              service: failure.service,
+              errorKind: failure.errorKind,
+              outcome: 'failed',
+              ...(failure.status === undefined ? {} : { status: failure.status }),
+            });
+            try {
+              await discord.editOriginalInteractionResponse({
+                applicationId: interaction.applicationId,
+                interactionToken: interaction.interactionToken,
+                content: failure.message,
+              });
+            } catch {
+              logger.error('interaction.error_response_failed', {
+                requestId,
+                interactionId: interaction.interactionId,
+                service: 'discord',
+                outcome: 'failed',
+                errorKind: 'internal',
+              });
+            }
           });
-        }),
+      },
     });
   }
 

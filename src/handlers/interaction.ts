@@ -17,6 +17,8 @@ import {
 } from '../discord/interactions';
 import { verifyDiscordSignature } from '../discord/signature';
 
+export const MAX_INTERACTION_BODY_BYTES = 64 * 1024;
+
 export interface InteractionHandlerDependencies {
   db: D1Database;
   publicKey: string;
@@ -37,7 +39,14 @@ export async function handleInteraction(
   request: Request,
   dependencies: InteractionHandlerDependencies,
 ): Promise<Response> {
+  const declaredLength = Number(request.headers.get('content-length'));
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_INTERACTION_BODY_BYTES) {
+    return json({ error: 'Payload Too Large' }, 413);
+  }
   const rawBody = await request.text();
+  if (new TextEncoder().encode(rawBody).byteLength > MAX_INTERACTION_BODY_BYTES) {
+    return json({ error: 'Payload Too Large' }, 413);
+  }
   const verified = await verifyDiscordSignature({
     publicKey: dependencies.publicKey,
     signature: request.headers.get('x-signature-ed25519'),
