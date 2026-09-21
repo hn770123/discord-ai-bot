@@ -1,6 +1,6 @@
 # Discord AI Bot
 
-Cloudflare Workers の HTTP Interaction と Cron Trigger で動作する、小規模な家族向け Discord AI Bot です。現在は開発基盤に加え、D1 schema と Repository 層を提供します。
+Cloudflare Workers の HTTP Interaction と Cron Trigger で動作する、小規模な家族向け Discord AI Bot です。現在は開発基盤、D1 Repository、および署名検証と allowlist を備えた Discord Interaction 入口を提供します。
 
 ## 必要な環境
 
@@ -46,6 +46,35 @@ npx wrangler deploy --env production
 
 資格情報は `vars` や Git 管理ファイルに書かず、対象環境へ Secret として登録します。ローカル値が必要になった場合は、Git 対象外の `.dev.vars.local` を使用します。
 
+Discord Developer Portal の Application に表示される Public Key を環境ごとに登録します。値をコマンドライン引数へ直接書かず、対話プロンプトから入力してください。
+
+```bash
+npx wrangler secret put DISCORD_PUBLIC_KEY --env preview
+npx wrangler secret put DISCORD_PUBLIC_KEY --env production
+```
+
+デプロイ後、Developer Portal の **Interactions Endpoint URL** へ `https://<worker-host>/interactions` を設定します。Discord の検証用 PING を含め、このエンドポイントは有効な Ed25519 署名と5分以内の timestamp だけを受け付けます。
+
+## `/ai` コマンド登録
+
+登録スクリプトは Discord API v10 を使用します。環境変数は実行するシェルだけへ設定し、Git 管理ファイルやコマンド出力へ残さないでください。既定の `guild` scope は開発 Guild へ即時反映しやすい方式です。
+
+```bash
+export DISCORD_APPLICATION_ID='<application id>'
+export DISCORD_BOT_TOKEN='<bot token>'
+export DISCORD_GUILD_ID='<development guild id>'
+npm run discord:register-command
+```
+
+本番で global command を選ぶ場合は scope を明示します。この場合 `DISCORD_GUILD_ID` は不要です。
+
+```bash
+export DISCORD_COMMAND_SCOPE='global'
+npm run discord:register-command
+```
+
+Bot Token はコマンド登録でのみ必要です。Interaction response の編集には Discord が発行した一時 token を使うため、Phase 2 の Worker へ Bot Token は渡しません。
+
 ## D1 migration
 
 migration は `migrations/` の連番 SQL を正として管理します。適用前に未適用一覧を確認し、空DBへの初回適用と既存DBへのロールフォワードで同じコマンドを使います。データベース名を明記し、環境の取り違えを防いでください。
@@ -88,11 +117,12 @@ npx wrangler d1 migrations apply discord-ai-bot-production --remote --env produc
 
 ## 現在のエンドポイント
 
-| Method | Path      | 説明                          |
-| ------ | --------- | ----------------------------- |
-| `GET`  | `/health` | Worker の正常性を JSON で返す |
+| Method | Path            | 説明                                                        |
+| ------ | --------------- | ----------------------------------------------------------- |
+| `GET`  | `/health`       | Worker の正常性を JSON で返す                               |
+| `POST` | `/interactions` | Discord署名、Interaction種別、allowlistを検証して応答を返す |
 
-Discord Interaction、AI 応答、Reminder 配信は後続 Phase で実装します。
+許可された `/ai` は3秒以内の初期応答に余裕を持たせるため即時 defer し、後続処理を Worker の `waitUntil()` へ登録します。AI 応答と Reminder 配信は後続 Phase で実装します。
 
 ## 公式仕様（2026-09-21 確認）
 
@@ -103,3 +133,6 @@ Discord Interaction、AI 応答、Reminder 配信は後続 Phase で実装しま
 - [D1 migrations](https://developers.cloudflare.com/d1/reference/migrations/)
 - [D1 Database API](https://developers.cloudflare.com/d1/worker-api/d1-database/)
 - [D1 prepared statements](https://developers.cloudflare.com/d1/worker-api/prepared-statements/)
+- [Discord: Receiving and Responding to Interactions](https://docs.discord.com/developers/interactions/receiving-and-responding)
+- [Discord: Application Commands](https://docs.discord.com/developers/interactions/application-commands)
+- [Cloudflare: Context (`waitUntil`)](https://developers.cloudflare.com/workers/runtime-apis/context/)
