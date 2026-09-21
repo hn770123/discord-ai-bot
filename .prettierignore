@@ -1,0 +1,10 @@
+package-lock.json
+.wrangler/
+coverage/
+dist/
+
+# Phase 0 より前に作成された設計文書は、内容変更時に個別整形する。
+deployment.md
+draft.md
+implementation.md
+plan.md

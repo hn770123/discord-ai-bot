@@ -1,0 +1,30 @@
+{
+  "name": "discord-ai-bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cloudflare Workers 上で動作する Discord AI Bot",
+  "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
+  "scripts": {
+    "dev": "wrangler dev --env local",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "npm run lint && npm run format:check && npm run typecheck && npm test"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.12.21",
+    "@cloudflare/workers-types": "5.20260920.1",
+    "@eslint/js": "9.39.2",
+    "eslint": "9.39.2",
+    "prettier": "3.6.2",
+    "typescript": "5.9.2",
+    "typescript-eslint": "8.70.0",
+    "vitest": "3.2.7",
+    "wrangler": "4.135.0"
+  }
+}
