@@ -1,0 +1,18 @@
+node_modules/
+dist/
+coverage/
+
+# Wrangler が作成するローカル状態とログは環境固有のため追跡しない。
+.wrangler/
+*.log
+
+# ローカルおよび各環境の秘密情報を誤ってコミットしない。
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+!.env.example
+
+# OS・エディター固有ファイル
+.DS_Store
+.idea/
