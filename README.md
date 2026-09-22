@@ -42,9 +42,14 @@ npm run check
 ```bash
 npx wrangler d1 create discord-ai-bot-preview
 npx wrangler d1 create discord-ai-bot-production
+npx wrangler d1 migrations apply discord-ai-bot-preview --remote --env preview
+npx wrangler d1 migrations apply discord-ai-bot-production --remote --env production
 npx wrangler deploy --env preview
 npx wrangler deploy --env production
 ```
+
+初回はProductionへ連続デプロイせず、Previewで検証してからProductionへ進めます。D1 IDの反映、
+schema適用、allowlist初期登録を含む詳細な順序は [デプロイガイド](deployment.md#42-d1) を参照してください。
 
 資格情報は `vars` や Git 管理ファイルに書かず、対象環境へ Secret として登録します。ローカル値が必要になった場合は、Git 対象外の `.dev.vars.local` を使用します。
 
