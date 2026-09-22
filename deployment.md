@@ -106,63 +106,50 @@ DiscordのsnowflakeはJavaScriptやSQLiteの整数へ変換せず、精度を保
 
 #### 4.2.1 Databaseの作成とbinding
 
-Cloudflareへログインした端末で、PreviewとProductionを別々のD1として作成する。
+Cloudflareへログインした端末で、運用に使用するD1を1つだけ作成する。
 
 ```bash
 npx wrangler login
-npx wrangler d1 create discord-ai-bot-preview
-npx wrangler d1 create discord-ai-bot-production
+npx wrangler d1 create discord-ai-bot
 ```
 
-各コマンドが出力する `database_id` を控え、`wrangler.jsonc` の同名環境にある
-`00000000-0000-0000-0000-000000000000` だけを対応するIDへ置換する。binding名 `DB` と
-`database_name` は変更しない。PreviewとProductionで同じIDを指定していないことを差分で確認し、
-実IDを反映した `wrangler.jsonc` は組織の運用方針に従って管理する。
+コマンドが出力する `database_id` を控え、`wrangler.jsonc` の
+`00000000-0000-0000-0000-000000000000` を実IDへ置換する。binding名 `DB` と
+`database_name` は変更しない。実IDを反映した設定は組織の運用方針に従って管理する。
 
 #### 4.2.2 schemaの適用
 
-最初にPreviewへ適用する。`list` で対象を確認し、`apply` 後にもう一度 `list` を実行して
+単一のリモートD1へ適用する。`list` で対象を確認し、`apply` 後にもう一度 `list` を実行して
 未適用migrationが残っていないことを確認する。
 
 ```bash
-npx wrangler d1 migrations list discord-ai-bot-preview --remote --env preview
-npx wrangler d1 migrations apply discord-ai-bot-preview --remote --env preview
-npx wrangler d1 migrations list discord-ai-bot-preview --remote --env preview
+npx wrangler d1 migrations list discord-ai-bot --remote
+npx wrangler d1 migrations apply discord-ai-bot --remote
+npx wrangler d1 migrations list discord-ai-bot --remote
 ```
 
-PreviewでWorkerの動作確認が完了してから、同じ手順でProductionへ適用する。
+ローカル開発用D1は別途作成せず、同じ設定を `--local` でローカル永続領域へ適用する。
 
 ```bash
-npx wrangler d1 migrations list discord-ai-bot-production --remote --env production
-npx wrangler d1 migrations apply discord-ai-bot-production --remote --env production
-npx wrangler d1 migrations list discord-ai-bot-production --remote --env production
-```
-
-ローカル開発用D1は作成不要で、`--local` により `wrangler dev` と同じローカル永続領域へ適用できる。
-
-```bash
-npx wrangler d1 migrations apply discord-ai-bot-local --local --env local
+npx wrangler d1 migrations apply discord-ai-bot --local
 ```
 
 #### 4.2.3 allowlistの初期登録
 
-schema適用後、利用を許可するDiscord Guild IDとUser IDを環境ごとに登録する。
-以下のプレースホルダーを実値へ置換し、まずPreviewで疎通を確認する。IDは引用符で囲み、
-数値へ変換しない。
+schema適用後、利用を許可するDiscord Guild IDとUser IDを単一D1へ登録する。
+以下のプレースホルダーを実値へ置換する。Discord snowflakeは引用符で囲み、数値へ変換しない。
 
 ```bash
-npx wrangler d1 execute discord-ai-bot-preview --remote --env preview \
+npx wrangler d1 execute discord-ai-bot --remote \
   --command "INSERT INTO allowed_guilds (guild_id, enabled) VALUES ('<guild-id>', 1) ON CONFLICT (guild_id) DO UPDATE SET enabled = excluded.enabled"
-npx wrangler d1 execute discord-ai-bot-preview --remote --env preview \
+npx wrangler d1 execute discord-ai-bot --remote \
   --command "INSERT INTO allowed_users (user_id, enabled) VALUES ('<user-id>', 1) ON CONFLICT (user_id) DO UPDATE SET enabled = excluded.enabled"
 ```
 
-Productionではデータベース名と `--env` をそれぞれ
-`discord-ai-bot-production`、`production` に変え、本番で許可するIDだけを登録する。
 登録結果は秘密情報や会話本文を含まない次のqueryで確認する。
 
 ```bash
-npx wrangler d1 execute discord-ai-bot-preview --remote --env preview \
+npx wrangler d1 execute discord-ai-bot --remote \
   --command "SELECT guild_id, enabled FROM allowed_guilds; SELECT user_id, enabled FROM allowed_users"
 ```
 
@@ -189,7 +176,7 @@ Scheduled Message用に、たとえば1分ごとのCronを設定する。
 Cloudflare CronはUTC基準。Reminder時刻はUTCまたはoffset付き日時へ正規化する。
 Cronの役割は通常会話取得ではなく、Scheduled Message配信だけに限定する。
 
-配信処理は1回最大100件、60秒のlease、最大5試行で動作する。PreviewではDiscordの一時エラー後に `pending` と `next_attempt_at` が更新されること、恒久的な4xxでは `failed` となること、成功時だけ `sent_at` が設定されることを確認する。送信成功直後かつD1更新前の停止では再送の可能性があるため、必要に応じて `reminders` の状態と対象チャンネルを照合する。
+配信処理は1回最大100件、60秒のlease、最大5試行で動作する。スモークテストではDiscordの一時エラー後に `pending` と `next_attempt_at` が更新されること、恒久的な4xxでは `failed` となること、成功時だけ `sent_at` が設定されることを確認する。送信成功直後かつD1更新前の停止では再送の可能性があるため、必要に応じて `reminders` の状態と対象チャンネルを照合する。
 
 ## 7. Slash Command登録
 Application Command APIで `/ai` を登録する。
@@ -198,17 +185,14 @@ Application Command APIで `/ai` を登録する。
 Phase 4以降は `action` に `chat`／`list`／`cancel` があり、削除時は一覧に表示された `reminder_id` を渡す。コマンド定義の変更後は登録スクリプトを再実行する。
 
 ## 8. デプロイ
-Preview、Productionの順に、**D1作成 → `database_id` 設定 → migration適用 → Secret登録 →
-Workerデプロイ**を行う。Workerを先にデプロイすると、初回リクエストが未作成テーブルを参照するため、
-必ずmigrationの完了を先に確認する。
+
+**D1作成 → `database_id` 設定 → migration適用 → Secret登録 → Workerデプロイ**の順に行う。Workerを先にデプロイすると、初回リクエストが未作成テーブルを参照するため、必ずmigrationの完了を先に確認する。
 
 ```bash
-npx wrangler deploy --env preview
-npx wrangler deploy --env production
+npx wrangler deploy
 ```
 
-ProductionはPreviewのスモークテスト完了後にのみデプロイする。コマンド実行前に環境名、D1名、
-適用対象Git SHAを読み上げ確認し、migration一覧とデプロイ結果をリリース記録へ残す。
+コマンド実行前にD1名と適用対象Git SHAを確認し、migration一覧とデプロイ結果をリリース記録へ残す。
 
 デプロイ後:
 1. Worker URL確認
@@ -234,10 +218,9 @@ ProductionはPreviewのスモークテスト完了後にのみデプロイする
 - [ ] Message Content取得確認
 
 ### Cloudflare
-- [ ] Preview / Production D1を別々に作成
-- [ ] 各環境の `database_id` と `DB` bindingを確認
-- [ ] PreviewでD1 migrationとスモークテストを完了
-- [ ] ProductionでD1 migrationを完了
+- [ ] 単一のD1を作成
+- [ ] `database_id` と `DB` bindingを確認
+- [ ] D1 migrationとスモークテストを完了
 - [ ] Secrets登録
 - [ ] Worker deploy
 - [ ] Cron Trigger
@@ -278,23 +261,22 @@ Discord投稿時は `allowed_mentions` を明示し、LLM生成文字列だけ�
 そのためGateway常時接続を維持するメリットが小さい。
 **HTTP Interaction + Discord REST API + D1 + Cron Trigger** に限定することで、Gateway接続・再接続・常駐プロセス監視を省く。
 
-## 12. Previewスモークテスト
+## 12. デプロイスモークテスト
 
-Preview用Discord Application、D1、Secretsだけを使用し、Productionの値を流用しない。デプロイ対象SHAを記録してから次の順序で確認する。
+単一のWorker、D1、Discord Application、Secretsを対象に、デプロイ対象SHAを記録してから次の順序で確認する。
 
 1. `npm ci && npm run check` を実行する。
-2. `npx wrangler d1 migrations list discord-ai-bot-preview --remote --env preview` で未適用分を確認し、`migrations apply` 後に再度一覧を確認する。
-3. `npx wrangler deploy --env preview` の出力にあるURLの `/health` が200と `cache-control: no-store` を返すことを確認する。
-4. Preview用ApplicationのInteraction Endpointを設定し、署名検証用PINGが成功することを確認する。
+2. `npx wrangler d1 migrations list discord-ai-bot --remote` で未適用分を確認し、`migrations apply` 後に再度一覧を確認する。
+3. `npx wrangler deploy` の出力にあるURLの `/health` が200と `cache-control: no-store` を返すことを確認する。
+4. Discord ApplicationのInteraction Endpointを設定し、署名検証用PINGが成功することを確認する。
 5. 許可外Userで `/ai` を実行し、ephemeral拒否となり外部APIが呼ばれないことをログで確認する。
 6. 許可Userで基本会話、履歴0件、Reminder追加・一覧・取消を確認する。`@everyone` を含む応答でも通知されないことを確認する。
-7. 一時的に無効なOpenAI modelをPreviewだけへ指定し、安全なAIエラー文と `interaction.failed` ログを確認してから元へ戻す。
-8. Reminderを期限到来させ、成功時だけ `sent` になることと、本人向け以外でmentionがないことを確認する。
-9. `wrangler tail --env preview` で相関IDを検索し、token、key、会話全文、Briefが出力されていないことを確認する。
+7. Reminderを期限到来させ、成功時だけ `sent` になることと、本人向け以外でmentionがないことを確認する。
+8. `wrangler tail` で相関IDを検索し、token、key、会話全文、Briefが出力されていないことを確認する。
 
 ## 13. Rollback
 
-WorkerコードはCloudflare dashboardのDeploymentsから直前の正常deploymentへ戻すか、記録済みの正常Git SHAをcheckoutして `npx wrangler deploy --env <environment>` で再デプロイする。rollback前に現在と復帰先のSHA、実行者、理由、時刻を障害記録へ残す。
+WorkerコードはCloudflare dashboardのDeploymentsから直前の正常deploymentへ戻すか、記録済みの正常Git SHAをcheckoutして `npx wrangler deploy` で再デプロイする。rollback前に現在と復帰先のSHA、実行者、理由、時刻を障害記録へ残す。
 
 D1 migrationは原則として巻き戻さない。既存Workerが読み書きできるよう、migrationは列・テーブル追加を基本とし、削除・rename・制約強化は「新構造追加 → 両対応コード → データ移行 → 旧構造削除」の複数リリースに分割する。コードrollback時も新しいschemaを残す。誤データ更新がある場合は、対象範囲を確認してD1 backup／Time Travelから別DBへ復元し、検証後に人間の承認を得て復旧する。
 

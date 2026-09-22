@@ -1,6 +1,6 @@
 /**
  * `/ai` Application Command を Discord REST API へ登録する運用スクリプト。
- * 開発時は guild、Production は明示設定により global を選択でき、資格情報は環境変数だけから読む。
+ * 既定では guild、明示設定により global を選択でき、資格情報は環境変数だけから読む。
  */
 /* global console, fetch, process */
 
