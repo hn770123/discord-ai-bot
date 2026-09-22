@@ -1,7 +1,6 @@
 // Wrangler の型生成を導入するまで、Phase 0 で使用する Binding の契約を一か所に置く。
 interface Env {
   DB: D1Database;
-  ENVIRONMENT: 'local' | 'preview' | 'production';
   /** Discord署名検証用の公開鍵。Bot Tokenとは異なり、受信リクエストの認証だけに使う。 */
   DISCORD_PUBLIC_KEY: string;
   /** Channel Messages API の Bot 認証に使うSecret。 */
