@@ -89,15 +89,81 @@ npm install -D wrangler
 Cloudflareは現在、新規プロジェクトでは `wrangler.jsonc` を推奨している。
 
 ### 4.2 D1
-D1 Databaseを作成し、Workerへbindingする。
-最低限のテーブル:
+D1のschemaは `migrations/` 以下の連番SQLを正本とする。初期schemaの
+`migrations/0001_initial_schema.sql` には次のテーブルと、Reminder取得用のindexが含まれる。
 
 ```text
 users
-messages
+channel_checkpoints
 reminders
 allowed_guilds
 allowed_users
+```
+
+DiscordのsnowflakeはJavaScriptやSQLiteの整数へ変換せず、精度を保つため `TEXT` のまま保存する。
+適用済みmigrationを編集すると環境間でschemaが食い違うため、以後の変更は
+`0002_<変更内容>.sql` のような新しいファイルを追加してロールフォワードする。
+
+#### 4.2.1 Databaseの作成とbinding
+
+Cloudflareへログインした端末で、PreviewとProductionを別々のD1として作成する。
+
+```bash
+npx wrangler login
+npx wrangler d1 create discord-ai-bot-preview
+npx wrangler d1 create discord-ai-bot-production
+```
+
+各コマンドが出力する `database_id` を控え、`wrangler.jsonc` の同名環境にある
+`00000000-0000-0000-0000-000000000000` だけを対応するIDへ置換する。binding名 `DB` と
+`database_name` は変更しない。PreviewとProductionで同じIDを指定していないことを差分で確認し、
+実IDを反映した `wrangler.jsonc` は組織の運用方針に従って管理する。
+
+#### 4.2.2 schemaの適用
+
+最初にPreviewへ適用する。`list` で対象を確認し、`apply` 後にもう一度 `list` を実行して
+未適用migrationが残っていないことを確認する。
+
+```bash
+npx wrangler d1 migrations list discord-ai-bot-preview --remote --env preview
+npx wrangler d1 migrations apply discord-ai-bot-preview --remote --env preview
+npx wrangler d1 migrations list discord-ai-bot-preview --remote --env preview
+```
+
+PreviewでWorkerの動作確認が完了してから、同じ手順でProductionへ適用する。
+
+```bash
+npx wrangler d1 migrations list discord-ai-bot-production --remote --env production
+npx wrangler d1 migrations apply discord-ai-bot-production --remote --env production
+npx wrangler d1 migrations list discord-ai-bot-production --remote --env production
+```
+
+ローカル開発用D1は作成不要で、`--local` により `wrangler dev` と同じローカル永続領域へ適用できる。
+
+```bash
+npx wrangler d1 migrations apply discord-ai-bot-local --local --env local
+```
+
+#### 4.2.3 allowlistの初期登録
+
+schema適用後、利用を許可するDiscord Guild IDとUser IDを環境ごとに登録する。
+以下のプレースホルダーを実値へ置換し、まずPreviewで疎通を確認する。IDは引用符で囲み、
+数値へ変換しない。
+
+```bash
+npx wrangler d1 execute discord-ai-bot-preview --remote --env preview \
+  --command "INSERT INTO allowed_guilds (guild_id, enabled) VALUES ('<guild-id>', 1) ON CONFLICT (guild_id) DO UPDATE SET enabled = excluded.enabled"
+npx wrangler d1 execute discord-ai-bot-preview --remote --env preview \
+  --command "INSERT INTO allowed_users (user_id, enabled) VALUES ('<user-id>', 1) ON CONFLICT (user_id) DO UPDATE SET enabled = excluded.enabled"
+```
+
+Productionではデータベース名と `--env` をそれぞれ
+`discord-ai-bot-production`、`production` に変え、本番で許可するIDだけを登録する。
+登録結果は秘密情報や会話本文を含まない次のqueryで確認する。
+
+```bash
+npx wrangler d1 execute discord-ai-bot-preview --remote --env preview \
+  --command "SELECT guild_id, enabled FROM allowed_guilds; SELECT user_id, enabled FROM allowed_users"
 ```
 
 ## 5. Secrets
@@ -132,9 +198,17 @@ Application Command APIで `/ai` を登録する。
 Phase 4以降は `action` に `chat`／`list`／`cancel` があり、削除時は一覧に表示された `reminder_id` を渡す。コマンド定義の変更後は登録スクリプトを再実行する。
 
 ## 8. デプロイ
+Preview、Productionの順に、**D1作成 → `database_id` 設定 → migration適用 → Secret登録 →
+Workerデプロイ**を行う。Workerを先にデプロイすると、初回リクエストが未作成テーブルを参照するため、
+必ずmigrationの完了を先に確認する。
+
 ```bash
-npx wrangler deploy
+npx wrangler deploy --env preview
+npx wrangler deploy --env production
 ```
+
+ProductionはPreviewのスモークテスト完了後にのみデプロイする。コマンド実行前に環境名、D1名、
+適用対象Git SHAを読み上げ確認し、migration一覧とデプロイ結果をリリース記録へ残す。
 
 デプロイ後:
 1. Worker URL確認
@@ -160,10 +234,12 @@ npx wrangler deploy
 - [ ] Message Content取得確認
 
 ### Cloudflare
-- [ ] Worker deploy
-- [ ] D1 binding
-- [ ] D1 migration
+- [ ] Preview / Production D1を別々に作成
+- [ ] 各環境の `database_id` と `DB` bindingを確認
+- [ ] PreviewでD1 migrationとスモークテストを完了
+- [ ] ProductionでD1 migrationを完了
 - [ ] Secrets登録
+- [ ] Worker deploy
 - [ ] Cron Trigger
 - [ ] Logs確認
 
