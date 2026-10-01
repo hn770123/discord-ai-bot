@@ -17,7 +17,7 @@
       "binding": "DB",
       "database_name": "discord-ai-bot",
       // D1 作成後、Wrangler が返した実 ID へ置換する。
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "483e21d5-b021-42f6-9c4f-24170c1f21c1",
     },
   ],
   "triggers": { "crons": ["* * * * *"] },
