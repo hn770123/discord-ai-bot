@@ -1,5 +1,7 @@
 # Discord AI Bot — Codex Cloud 実装計画
 
+> **文書の位置づけ:** この文書は実装計画の記録です。現在の構成・認証・デプロイ手順の正本は `README.md` と `deployment.md` です。記載された将来形やセットアップ案を運用手順として実行しないでください。
+
 ## 1. この計画の目的
 
 `draft.md` の体験を、Codex Cloud で段階的に実装し、GitHub Codespaces と、Codespaces に接続したローカルの Visual Studio Code（以下 VS Code）から検証・デプロイできる状態にする。

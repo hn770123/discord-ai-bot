@@ -2,12 +2,35 @@
 
 Cloudflare Workers の HTTP Interaction と Cron Trigger で動作する、小規模な家族向け Discord AI Bot です。署名検証と allowlist を通過した `/ai` に対し、同一チャンネルの会話履歴、User Brief、現在日時を使った構造化 AI 応答を提供します。
 
+## 最初に読む場所
+
+| 目的                                 | 文書                                        |
+| ------------------------------------ | ------------------------------------------- |
+| ローカルでコードを確認する           | この README の[ローカル開発](#ローカル開発) |
+| 初回セットアップ／本番デプロイを行う | **[デプロイガイド](deployment.md)**         |
+| 実装上の制約や障害時の挙動を確認する | [Implementation Notes](implementation.md)   |
+| 構想・過去の実装計画を確認する       | [Draft](draft.md)／[実装計画](plan.md)      |
+
+本番セットアップの正本は `deployment.md` です。認証情報の取得、Cloudflare へのログイン、D1、Secret、デプロイ、Discord の Endpoint とコマンド登録を、実行順に1本の手順として記載しています。README の断片的なコマンドをつなぎ合わせて本番作業を行わないでください。
+
+## 構成
+
+```text
+Discord /ai ──署名付きHTTPS──> Cloudflare Worker
+                                  ├── Discord REST API（履歴・応答）
+                                  ├── OpenAI Responses API
+                                  └── D1（allowlist・状態・予定）
+Cloudflare Cron ───────────────> Worker ──> Discord（予定通知）
+```
+
+Gateway への常時接続は行いません。通常投稿は `/ai` 実行時に Discord REST API から取得します。
+
 ## 必要な環境
 
 - Node.js 22（`.nvmrc` で固定）
 - npm（Node.js 同梱版）
 
-GitHub Codespaces では Dev Container が Node.js と推奨 VS Code 拡張を準備します。コンテナー作成後、依存関係は次の 1 コマンドで再現できます。
+GitHub Codespaces では Dev Container が Node.js と推奨 VS Code 拡張を準備します。コンテナー作成後、またはローカル clone 後に依存関係を再現します。
 
 ```bash
 npm ci
@@ -15,137 +38,75 @@ npm ci
 
 ## ローカル開発
 
-Worker を起動します。ローカル環境では秘密情報や Cloudflare アカウントは不要です。
+### 自動チェック
 
-```bash
-npm run dev
-```
-
-別のターミナルからヘルスチェックを確認します。
-
-```bash
-curl -i http://localhost:8787/health
-```
-
-成功時は `200` と `{"status":"ok"}` を返します。すべての自動チェックは次のコマンドで実行できます。
+外部サービスの資格情報やネットワーク接続を使わず、lint、format、型、unit／integration test、空のローカルD1へのmigration適用を確認できます。
 
 ```bash
 npm run check
 ```
 
-`check` は lint、format、typecheck、unit／integration test に加え、本番と同じSQLを空のD1へ適用するmigration検査まで実行します。外部サービスの資格情報やネットワーク接続は不要です。統合テストだけを再実行する場合は `npm run test:integration` を使います。
+統合テストだけを再実行する場合は `npm run test:integration` を使います。
 
-## 環境設定
+### Worker とローカルD1
 
-`wrangler.jsonc` は名前付き環境を使用せず、`discord-ai-bot` Worker と `discord-ai-bot` D1をトップレベルに1つずつ定義しています。リポジトリ内の `database_id` は無効なプレースホルダーです。D1を1つ作成し、返された実IDへ置換してからmigrationとデプロイを行ってください。
-
-```bash
-npx wrangler d1 create discord-ai-bot
-npx wrangler d1 migrations apply discord-ai-bot --remote
-npx wrangler deploy
-```
-
-D1 IDの反映、schema適用、allowlist初期登録を含む詳細な順序は [デプロイガイド](deployment.md#42-d1) を参照してください。
-
-資格情報は `vars` や Git 管理ファイルに書かず、単一WorkerへSecretとして登録します。ローカル値が必要になった場合は、Git対象外の `.dev.vars` を使用します。値をコマンドライン引数へ直接書かず、対話プロンプトから入力してください。
+ローカルD1へmigrationを適用してから Worker を起動します。`--local` の処理には Cloudflare 認証は不要です。
 
 ```bash
-npx wrangler secret put DISCORD_PUBLIC_KEY
-npx wrangler secret put DISCORD_BOT_TOKEN
-npx wrangler secret put OPENAI_API_KEY
-```
-
-デプロイ後、Developer Portal の **Interactions Endpoint URL** へ `https://<worker-host>/interactions` を設定します。Discord の検証用 PING を含め、このエンドポイントは有効な Ed25519 署名と5分以内の timestamp だけを受け付けます。
-
-## `/ai` コマンド登録
-
-登録スクリプトは Discord API v10 を使用します。環境変数は実行するシェルだけへ設定し、Git 管理ファイルやコマンド出力へ残さないでください。既定の `guild` scope は開発 Guild へ即時反映しやすい方式です。
-
-```bash
-export DISCORD_APPLICATION_ID='<application id>'
-export DISCORD_BOT_TOKEN='<bot token>'
-export DISCORD_GUILD_ID='<development guild id>'
-npm run discord:register-command
-```
-
-本番で global command を選ぶ場合は scope を明示します。この場合 `DISCORD_GUILD_ID` は不要です。
-
-```bash
-export DISCORD_COMMAND_SCOPE='global'
-npm run discord:register-command
-```
-
-Bot Token はコマンド登録に加え、Worker が Channel Messages API から履歴を取得するためにも必要です。`OPENAI_MODEL` と初回 User の `DEFAULT_TIMEZONE` は秘密ではない共通変数として `wrangler.jsonc` に定義し、Bot Token と OpenAI API Key は必ず Secret にします。
-
-## D1 migration
-
-migration は `migrations/` の連番 SQL を正として管理します。ローカル開発とリモート運用は同じ `discord-ai-bot` bindingを使い、`--local`／`--remote` で接続先だけを明示します。
-
-### Local
-
-Cloudflare認証なしで、`wrangler dev` と同じローカルD1へ適用します。
-
-```bash
-npx wrangler d1 migrations list discord-ai-bot --local
 npx wrangler d1 migrations apply discord-ai-bot --local
+npm run dev
 ```
 
-空DBから再現性を確認する場合は、Git対象外の一時ディレクトリを指定できます。
+別のターミナルでヘルスチェックを確認します。
 
 ```bash
-rm -rf .wrangler/migration-check
-npx wrangler d1 migrations apply discord-ai-bot --local --persist-to .wrangler/migration-check
+curl -i http://localhost:8787/health
 ```
 
-### Remote
+成功時は `200`、`cache-control: no-store`、`{"status":"ok"}` を返します。実際の Discord／OpenAI 疎通をローカルで試す場合だけ、Git対象外の `.dev.vars` に次の値を設定します。
 
-`wrangler.jsonc` の `database_id` を作成済みD1のIDへ置換し、Cloudflareへログインしてから単一のリモートDBへ適用します。
-
-```bash
-npx wrangler d1 migrations list discord-ai-bot --remote
-npx wrangler d1 migrations apply discord-ai-bot --remote
-npx wrangler d1 migrations list discord-ai-bot --remote
+```dotenv
+DISCORD_PUBLIC_KEY=...
+DISCORD_BOT_TOKEN=...
+OPENAI_API_KEY=...
 ```
 
-適用後の一覧で未適用migrationがないことを確認します。D1は適用済みファイル名を `d1_migrations` に記録するため、適用済みSQLは編集せず、変更は次番号のmigrationとして追加します。
+`.dev.vars` を共有・コミットしないでください。通常の自動テストと `/health` の確認にはこれらの値は不要です。
 
-## 現在のエンドポイント
+## 設定の要点
 
-| Method | Path            | 説明                                                        |
-| ------ | --------------- | ----------------------------------------------------------- |
-| `GET`  | `/health`       | Worker の正常性を JSON で返す                               |
-| `POST` | `/interactions` | Discord署名、Interaction種別、allowlistを検証して応答を返す |
+- Worker、D1、Discord Application は名前付き環境を分けず、各1つを運用します。
+- `wrangler.jsonc` の `database_id` は現在設定済みです。初回作業でも無条件にD1を作り直さず、Cloudflare認証後にそのIDが対象アカウントに存在するか確認します。
+- `OPENAI_MODEL` と `DEFAULT_TIMEZONE` は秘密ではないため `wrangler.jsonc` の `vars` に置きます。
+- `DISCORD_PUBLIC_KEY`、`DISCORD_BOT_TOKEN`、`OPENAI_API_KEY` は Worker Secret に置きます。
+- Discord のコマンド登録にだけ使う `DISCORD_APPLICATION_ID` と `DISCORD_GUILD_ID` は、実行時のシェル環境変数として渡します。
+- リモート操作では `--remote` を明示し、ローカルD1と取り違えないようにします。
 
-許可された `/ai` は3秒以内の初期応答に余裕を持たせるため即時 defer し、後続処理を Worker の `waitUntil()` へ登録します。後続処理は最大100件の同一 Guild／Channel の履歴、User Brief、UTC現在日時と timezone を使って OpenAI Responses API を1回呼び、検証済みの応答・Brief・Reminderだけを反映します。通常応答は `allowed_mentions.parse = []` のため、生成文中の `@everyone`、`@here`、ユーザーメンションは通知を発生させません。
+認証方法、IDの取得場所、権限、コマンドを含む完全な手順は [デプロイガイド](deployment.md) を参照してください。
 
-Interaction body は64 KiB、入力prompt・AI応答・Brief・Reminder本文は各2000文字を上限とします。Discord APIは10秒、OpenAI Responses APIは30秒で打ち切り、失敗時はレスポンス本文を表示せずサービス別の安全な固定文を返します。構造化ログには `requestId`、`interactionId`、`reminderId` とエラー分類だけを記録し、token、API key、会話全文、Briefは記録しません。
+## `/ai` の機能
 
-`/ai` の `action` では次の操作を選択できます。省略時は `chat` です。コマンド定義を更新した後は、登録スクリプトを再実行してください。
+コマンド定義を変更した場合は、デプロイガイドの手順で登録スクリプトを再実行します。
 
-| action   | 入力          | 動作                                                  |
-| -------- | ------------- | ----------------------------------------------------- |
-| `chat`   | `prompt`      | AIとの会話と、構造化出力による予定追加                |
-| `list`   | なし          | 実行者が同じGuildで作成した予定を最大20件表示         |
-| `cancel` | `reminder_id` | 実行者が同じGuildで作成した未処理予定を論理キャンセル |
+| action         | 入力          | 動作                                                  |
+| -------------- | ------------- | ----------------------------------------------------- |
+| `chat`（既定） | `prompt`      | AIとの会話と、構造化出力による予定追加                |
+| `list`         | なし          | 実行者が同じGuildで作成した予定を最大20件表示         |
+| `cancel`       | `reminder_id` | 実行者が同じGuildで作成した未処理予定を論理キャンセル |
 
-Cron は1回につき最大100件を処理します。期限到来分を60秒の lease で獲得してから投稿し、成功後にだけ `sent` へ更新します。HTTP 408、429、5xx と通信失敗は指数バックオフで最大5回まで再試行し、それ以外のDiscord 4xxまたは試行上限到達は `failed` として停止します。チャンネル通知は全mentionを無効化し、本人向け通知だけは作成者IDを `allowed_mentions.users` へ明示します。
+## エンドポイントと安全性
 
-同じ Interaction が再処理された場合、Interaction ID を Reminder ID とすることで二重作成を抑止します。AI出力の取得または検証に失敗した場合は Brief、Reminder、checkpointを更新しません。Discord応答の編集に失敗した場合はDB更新済みでcheckpoint未更新となり、同一Interactionの再処理でReminderは重複せず、Briefは同じ値に収束します。運用時は秘密値や会話本文を表示せず、外部APIの状態コードとInteraction IDだけで障害箇所を調査してください。
+| Method | Path            | 説明                                                      |
+| ------ | --------------- | --------------------------------------------------------- |
+| `GET`  | `/health`       | Worker の正常性を JSON で返す                             |
+| `POST` | `/interactions` | Discord署名、Interaction種別、allowlistを検証して応答する |
 
-## 公式仕様（2026-09-22 確認）
+`/ai` は3秒以内に defer し、後続処理を `waitUntil()` へ登録します。最大100件の同一Guild／Channelの履歴、User Brief、現在日時と timezone を使って OpenAI Responses API を1回呼びます。入力・出力はWorker側でも検証し、通常応答では全mentionを無効化します。
 
-- [Wrangler configuration](https://developers.cloudflare.com/workers/wrangler/configuration/)
-- [Cron Triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/)
-- [Vitest integration](https://developers.cloudflare.com/workers/testing/vitest-integration/)
-- [D1 migrations](https://developers.cloudflare.com/d1/reference/migrations/)
-- [D1 Database API](https://developers.cloudflare.com/d1/worker-api/d1-database/)
-- [D1 prepared statements](https://developers.cloudflare.com/d1/worker-api/prepared-statements/)
-- [D1 returned metadata](https://developers.cloudflare.com/d1/worker-api/return-object/)
-- [Discord: Receiving and Responding to Interactions](https://docs.discord.com/developers/interactions/receiving-and-responding)
-- [Discord: Application Commands](https://docs.discord.com/developers/interactions/application-commands)
-- [Discord: Message / Get Channel Messages](https://docs.discord.com/developers/resources/message#get-channel-messages)
-- [Discord: Allowed Mentions](https://docs.discord.com/developers/resources/message#allowed-mentions-object)
-- [Discord: HTTP response codes](https://docs.discord.com/developers/topics/opcodes-and-status-codes#http-http-response-codes)
-- [Cloudflare: Context (`waitUntil`)](https://developers.cloudflare.com/workers/runtime-apis/context/)
-- [OpenAI: Responses API](https://developers.openai.com/api/reference/resources/responses/methods/create)
-- [OpenAI: Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
+Interaction body は64 KiB、prompt・AI応答・Brief・Reminder本文は各2000文字が上限です。Discord APIは10秒、OpenAI APIは30秒で打ち切ります。ログには相関IDとエラー分類だけを記録し、token、API key、会話全文、Briefは記録しません。
+
+Cron は1回につき最大100件を処理し、60秒のleaseを取得します。通信失敗、HTTP 408、429、5xxは指数バックオフで最大5回まで再試行し、それ以外のDiscord 4xxまたは試行上限到達は `failed` とします。詳しい状態遷移と復旧方法は [Implementation Notes](implementation.md) とデプロイガイドの[障害対応](deployment.md#12-障害対応とrollback)を参照してください。
+
+## 公式資料
+
+外部サービスを設定する際は、デプロイガイド末尾の[公式資料](deployment.md#13-公式資料)から最新仕様を確認してください。
