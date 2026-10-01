@@ -1,5 +1,7 @@
 # Discord AI Bot — Draft v3
 
+> **文書の位置づけ:** この文書は初期構想の記録です。現在のセットアップや認証には使用せず、`README.md` と `deployment.md` を参照してください。
+
 ## 概要
 Cloudflare Workers 上で動く、小規模な家族向け Discord AI Bot。
 万能AIではなく「話す・覚えている・あとで声をかける」に絞り、人間同士の会話を主役にする。

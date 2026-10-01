@@ -32,11 +32,11 @@ DISCORD_PUBLIC_KEY
 DISCORD_BOT_TOKEN
 ```
 
-- `APPLICATION_ID`: コマンド登録等
-- `PUBLIC_KEY`: Discord → Worker の署名検証
-- `BOT_TOKEN`: Worker → Discord REST API の認証
+- `DISCORD_APPLICATION_ID`: コマンド登録（Workerには渡さない）
+- `DISCORD_PUBLIC_KEY`: Discord → Worker の署名検証
+- `DISCORD_BOT_TOKEN`: Worker → Discord REST API の認証
 
-`BOT_TOKEN` は Worker Secret に保存する。
+`DISCORD_PUBLIC_KEY` と `DISCORD_BOT_TOKEN` は Worker Secret に保存する。取得・登録手順は `deployment.md` を正本とする。
 
 ## 3. 応答が遅い場合
 Discord Interaction は初期応答を3秒以内に返す必要があるため、`/ai` は原則すべて defer する。
@@ -160,7 +160,6 @@ HTTP 408、429、5xxと通信例外は指数バックオフで `pending` へ戻�
 主に保持するもの:
 - User Brief
 - 前回AI参加位置
-- 必要なRecent Message
 - Scheduled Message
 - allowlist
 
