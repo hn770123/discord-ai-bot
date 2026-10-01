@@ -7,58 +7,18 @@
   "observability": {
     "enabled": true,
   },
-
-  // D1 や vars は環境間で継承されないため、誤接続を防ぐ目的で各環境へ明記する。
-  "env": {
-    "local": {
-      "name": "discord-ai-bot-local",
-      "vars": {
-        "ENVIRONMENT": "local",
-        "OPENAI_MODEL": "gpt-5-mini",
-        "DEFAULT_TIMEZONE": "Asia/Tokyo",
-      },
-      "d1_databases": [
-        {
-          "binding": "DB",
-          "database_name": "discord-ai-bot-local",
-          "database_id": "00000000-0000-0000-0000-000000000000",
-        },
-      ],
-      "triggers": { "crons": [] },
-    },
-    "preview": {
-      "name": "discord-ai-bot-preview",
-      "vars": {
-        "ENVIRONMENT": "preview",
-        "OPENAI_MODEL": "gpt-5-mini",
-        "DEFAULT_TIMEZONE": "Asia/Tokyo",
-      },
-      "d1_databases": [
-        {
-          "binding": "DB",
-          "database_name": "discord-ai-bot-preview",
-          // Codespaces で Preview D1 を作成した後に実 ID へ置換する。
-          "database_id": "00000000-0000-0000-0000-000000000000",
-        },
-      ],
-      "triggers": { "crons": ["* * * * *"] },
-    },
-    "production": {
-      "name": "discord-ai-bot-production",
-      "vars": {
-        "ENVIRONMENT": "production",
-        "OPENAI_MODEL": "gpt-5-mini",
-        "DEFAULT_TIMEZONE": "Asia/Tokyo",
-      },
-      "d1_databases": [
-        {
-          "binding": "DB",
-          "database_name": "discord-ai-bot-production",
-          // 本番 ID はリポジトリへ事前投入せず、D1 作成時に置換する。
-          "database_id": "00000000-0000-0000-0000-000000000000",
-        },
-      ],
-      "triggers": { "crons": ["* * * * *"] },
-    },
+  // Worker とリモート D1 は環境を分けず、このトップレベル設定だけを運用する。
+  "vars": {
+    "OPENAI_MODEL": "gpt-5-mini",
+    "DEFAULT_TIMEZONE": "Asia/Tokyo",
   },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "discord-ai-bot",
+      // D1 作成後、Wrangler が返した実 ID へ置換する。
+      "database_id": "00000000-0000-0000-0000-000000000000",
+    },
+  ],
+  "triggers": { "crons": ["* * * * *"] },
 }

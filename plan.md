@@ -34,7 +34,7 @@ Codex Cloud には本番の Discord Bot Token、LLM API Key、Cloudflare API Tok
 
 - PRのレビューとマージ
 - Cloudflare / Discord / LLM の認証およびシークレット投入
-- Preview / Production の D1 作成と migration 適用
+- 単一D1の作成とmigration適用
 - Worker のデプロイ
 - Discord Developer Portal の設定
 - 実Guildでのエンドツーエンド確認
@@ -44,14 +44,13 @@ Codex Cloud には本番の Discord Bot Token、LLM API Key、Cloudflare API Tok
 
 ### 2.3 環境の区分
 
-| 環境 | 用途 | 外部接続 | データ |
+| 実行場所 | 用途 | 外部接続 | データ |
 |---|---|---|---|
 | Codex Cloud task | 実装、単体テスト、PR | モック中心 | テスト用一時DB |
-| Codespaces local | 統合テスト、migration確認 | 開発用資格情報 | ローカルD1 |
-| Cloudflare Preview | Discord疎通と受入テスト | 開発用Discord Application / LLM | Preview D1 |
-| Cloudflare Production | 家族向け運用 | 本番用資格情報 | Production D1 |
+| Codespaces local | 統合テスト、migration確認 | 必要に応じて開発用資格情報 | ローカルD1エミュレーション |
+| Cloudflare | Discord疎通と家族向け運用 | Discord Application / LLM | 単一D1 |
 
-Preview と Production では D1 database、allowlist、Worker secrets、Discord Application を分離する。少なくとも D1 と secrets は必ず環境別にする。
+Cloudflare上ではWorker、D1 database、allowlist、Worker secrets、Discord Applicationを各1つだけ運用する。リリース前の検証はローカルテストと、同じWorkerへデプロイした後のスモークテストで行う。
 
 ## 3. 実装開始前の仕様確認
 
@@ -69,7 +68,7 @@ Preview と Production では D1 database、allowlist、Worker secrets、Discord
 3. **Cloudflare**
    - 最新 Wrangler 設定形式、Workers の `fetch` / `scheduled` handler
    - D1 binding、migration、transaction / batch の保証範囲
-   - Cron Trigger、Secrets、Preview / Production 環境設定
+   - Cron Trigger、Secrets、単一Worker／D1設定
 4. **採用するLLM API**
    - 推奨API、利用可能なモデル、構造化出力のschema、タイムアウトとエラー形式
    - APIキーの管理方法、データ保持に関する設定
@@ -181,7 +180,7 @@ Cronの重複実行を前提に、取得しただけでは送信済みにしな�
 - TypeScript / Wrangler / test runner / lint / format / typecheck の導入
 - `.devcontainer/devcontainer.json` と推奨VS Code拡張の追加
 - `.gitignore` に `.dev.vars*`、`.env*`、Wranglerのローカル状態を追加
-- `wrangler.jsonc` に binding名、Cron、Preview / Production の雛形を定義
+- `wrangler.jsonc` のトップレベルに単一のbinding、Cron、Worker設定を定義
 - 最小の `fetch` / `scheduled` handler とヘルスチェックを作成
 - CIで install、lint、typecheck、test を実行
 
@@ -190,7 +189,7 @@ Cronの重複実行を前提に、取得しただけでは送信済みにしな�
 - Codespace作成後、README記載の1コマンドで依存関係を導入できる
 - ローカルWorkerが起動し、ヘルスチェックへ応答する
 - シークレットなしで全自動テストが成功する
-- ProductionのIDや資格情報が設定ファイルに含まれない
+- 実D1 IDや資格情報が設定ファイルに含まれない
 
 ### Phase 1 — D1 schema とRepository
 
@@ -199,7 +198,7 @@ Cronの重複実行を前提に、取得しただけでは送信済みにしな�
 - `users`、`channel_checkpoints`、`reminders`、`allowed_guilds`、`allowed_users` のmigration
 - Repository層と日時・snowflakeの型を実装
 - allowlist、Brief、checkpoint、Reminder状態遷移のテスト
-- ローカル / Preview / Production それぞれのmigration手順を文書化
+- ローカルと単一リモートD1のmigration手順を文書化
 
 **受入条件**
 
@@ -294,7 +293,7 @@ HTTP受信
 - abuse対策としてrequest size、履歴件数、応答文字数、タイムアウトを制限
 - 外部APIごとのエラー分類と利用者向けの安全なエラーメッセージ
 - request / interaction / reminder の相関IDを使った構造化ログ
-- Preview環境用のスモークテスト手順、rollback手順、障害対応表
+- デプロイ後のスモークテスト手順、rollback手順、障害対応表
 - README、`implementation.md`、`deployment.md` を実装に合わせて更新
 
 **受入条件**
@@ -302,7 +301,7 @@ HTTP受信
 - lint、typecheck、unit、integration、migration検査がCIで成功する
 - token / key / 会話全文 / Briefがログとテストsnapshotへ含まれない
 - 旧Workerへのrollbackと、前方互換なDB migration方針が文書化されている
-- 下記の受入シナリオをPreviewで実行できる
+- 下記の受入シナリオをデプロイ後に実行できる
 
 ## 8. Codex Cloud へのタスク依頼方法
 
@@ -329,7 +328,7 @@ Codex Cloud の各タスクでは次の作業規則を適用する。
 6. `git diff` で秘密情報、不要な生成物、意図しない変更を確認する
 7. 1つのPhaseに閉じたコミットを作成し、日本語のPR本文を作成する
 
-人間のレビューでは、特に認証境界、tenant境界、メンション、日時解釈、冪等性、migrationを確認する。Codex Cloud のPRを自動でProductionへデプロイしない。
+人間のレビューでは、特に認証境界、tenant境界、メンション、日時解釈、冪等性、migrationを確認する。Codex Cloud のPRを自動でCloudflareへデプロイしない。
 
 ## 9. Codespaces セットアップ計画
 
@@ -344,7 +343,7 @@ Codex Cloud の各タスクでは次の作業規則を適用する。
 
 ### 9.2 シークレットの置き場所
 
-| 値 | 開発時 | Preview / Production |
+| 値 | 開発時 | Cloudflare |
 |---|---|---|
 | Discord Bot Token / Public Key | Codespaces secret またはgitignore済み `.dev.vars` | `wrangler secret put` |
 | LLM API Key | Codespaces secret またはgitignore済み `.dev.vars` | `wrangler secret put` |
@@ -353,36 +352,22 @@ Codex Cloud の各タスクでは次の作業規則を適用する。
 
 Codespaces secretをリポジトリsecretとして登録する場合は、アクセス対象リポジトリを限定する。`.dev.vars.example` にはキー名だけを置き、値は置かない。シークレットをshell historyへ残しにくい投入手順を採用し、デバッグ出力で環境変数一覧を表示しない。
 
-## 10. Preview から Production へのデプロイ手順
+## 10. 単一環境へのデプロイ手順
 
-実際のコマンド名とオプションは Phase 0 で固定し、`package.json` のscriptを唯一の入口にする。以下は手順の順序を示す。
-
-### 10.1 Preview
+実際のコマンド名とオプションは `package.json` と `deployment.md` に合わせる。名前付き環境は作成せず、次の順序で単一WorkerとD1を更新する。
 
 1. `main` の最新コミットとcleanなworking treeを確認する
 2. lint、typecheck、unit、integrationをすべて実行する
-3. Preview用D1を作成し、bindingを設定する
-4. Preview用secretsをWrangler経由で登録する
-5. migrationの適用予定を確認してからPreview D1へ適用する
-6. WorkerをPreview環境へデプロイする
-7. Preview用Discord ApplicationへInteraction Endpoint URLを設定する
-8. 開発Guildへ `/ai` をGuild commandとして登録する
-9. 受入シナリオとログの秘匿性を確認する
-
-### 10.2 Production
-
-1. Previewで検証したGit SHAを記録する
-2. 同じSHAからProduction用のcheckを再実行する
 3. D1の復旧方法とmigrationの前方互換性を確認する
-4. Production D1へmigrationを適用する
-5. Production secretsが存在することを値を表示せず確認する
-6. WorkerをProductionへデプロイする
-7. DiscordのProduction Endpointとcommand設定を確認する
-8. allowlistを投入してから、許可済みUserでスモークテストする
+4. 単一D1へmigrationを適用する
+5. Worker secretsが存在することを値を表示せず確認する
+6. 同じSHAから単一Workerをデプロイする
+7. DiscordのInteraction Endpointとcommand設定を確認する
+8. 許可済みUserでスモークテストする
 9. Cron実行とReminder配信を確認する
 10. デプロイSHA、migration、確認結果をリリース記録へ残す
 
-ProductionデプロイはCodespaceから人間が明示的に実行する。Codex Cloud、PR、通常CIにはProduction用API Tokenを与えない。
+デプロイはCodespaceから人間が明示的に実行する。Codex Cloud、PR、通常CIにはCloudflare API Tokenを与えない。
 
 ## 11. エンドツーエンド受入シナリオ
 
@@ -427,7 +412,7 @@ ProductionデプロイはCodespaceから人間が明示的に実行する。Code
 - Vector DB、Embedding、横断検索
 - 他人への通知、高度な繰り返し予定、予定変更UI
 - Web管理画面、一般公開、課金、多言語UI
-- 自動Productionデプロイ
+- 自動デプロイ
 
 運用後に計測してから、履歴ページング、要約、Reminderのdead-letter運用、管理コマンド、CI/CDの承認付きデプロイを個別に検討する。
 
@@ -437,8 +422,8 @@ ProductionデプロイはCodespaceから人間が明示的に実行する。Code
 
 - Phase 0〜5のPRがレビュー・マージ済み
 - CIの全checkが成功
-- Previewで全受入シナリオを確認済み
-- Production D1 / secrets / allowlist / Cronが構成済み
+- デプロイ後に全受入シナリオを確認済み
+- 単一D1 / secrets / allowlist / Cronが構成済み
 - 指定した複数Guildで `/ai` とScheduled Messageが動作
 - データ分離、署名検証、メンション抑止、冪等性のテストが存在
 - Codespacesに新規接続した担当者が文書だけで検証・デプロイ可能

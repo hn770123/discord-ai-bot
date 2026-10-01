@@ -37,31 +37,22 @@ npm run check
 
 ## 環境設定
 
-`wrangler.jsonc` は `local`、`preview`、`production` を分離し、各環境に `DB` D1 binding と Cron の雛形を定義しています。リポジトリ内の D1 ID は無効なプレースホルダーです。Preview／Production のデータベース作成後、それぞれの `database_id` を実 ID に置換してからデプロイしてください。
+`wrangler.jsonc` は名前付き環境を使用せず、`discord-ai-bot` Worker と `discord-ai-bot` D1をトップレベルに1つずつ定義しています。リポジトリ内の `database_id` は無効なプレースホルダーです。D1を1つ作成し、返された実IDへ置換してからmigrationとデプロイを行ってください。
 
 ```bash
-npx wrangler d1 create discord-ai-bot-preview
-npx wrangler d1 create discord-ai-bot-production
-npx wrangler d1 migrations apply discord-ai-bot-preview --remote --env preview
-npx wrangler d1 migrations apply discord-ai-bot-production --remote --env production
-npx wrangler deploy --env preview
-npx wrangler deploy --env production
+npx wrangler d1 create discord-ai-bot
+npx wrangler d1 migrations apply discord-ai-bot --remote
+npx wrangler deploy
 ```
 
-初回はProductionへ連続デプロイせず、Previewで検証してからProductionへ進めます。D1 IDの反映、
-schema適用、allowlist初期登録を含む詳細な順序は [デプロイガイド](deployment.md#42-d1) を参照してください。
+D1 IDの反映、schema適用、allowlist初期登録を含む詳細な順序は [デプロイガイド](deployment.md#42-d1) を参照してください。
 
-資格情報は `vars` や Git 管理ファイルに書かず、対象環境へ Secret として登録します。ローカル値が必要になった場合は、Git 対象外の `.dev.vars.local` を使用します。
-
-Discord Developer Portal の Application に表示される Public Key を環境ごとに登録します。値をコマンドライン引数へ直接書かず、対話プロンプトから入力してください。
+資格情報は `vars` や Git 管理ファイルに書かず、単一WorkerへSecretとして登録します。ローカル値が必要になった場合は、Git対象外の `.dev.vars` を使用します。値をコマンドライン引数へ直接書かず、対話プロンプトから入力してください。
 
 ```bash
-npx wrangler secret put DISCORD_PUBLIC_KEY --env preview
-npx wrangler secret put DISCORD_PUBLIC_KEY --env production
-npx wrangler secret put DISCORD_BOT_TOKEN --env preview
-npx wrangler secret put DISCORD_BOT_TOKEN --env production
-npx wrangler secret put OPENAI_API_KEY --env preview
-npx wrangler secret put OPENAI_API_KEY --env production
+npx wrangler secret put DISCORD_PUBLIC_KEY
+npx wrangler secret put DISCORD_BOT_TOKEN
+npx wrangler secret put OPENAI_API_KEY
 ```
 
 デプロイ後、Developer Portal の **Interactions Endpoint URL** へ `https://<worker-host>/interactions` を設定します。Discord の検証用 PING を含め、このエンドポイントは有効な Ed25519 署名と5分以内の timestamp だけを受け付けます。
@@ -84,47 +75,39 @@ export DISCORD_COMMAND_SCOPE='global'
 npm run discord:register-command
 ```
 
-Bot Token はコマンド登録に加え、Worker が Channel Messages API から履歴を取得するためにも必要です。`OPENAI_MODEL` と初回 User の `DEFAULT_TIMEZONE` は秘密ではない環境別変数として `wrangler.jsonc` に定義し、Bot Token と OpenAI API Key は必ず Secret にします。
+Bot Token はコマンド登録に加え、Worker が Channel Messages API から履歴を取得するためにも必要です。`OPENAI_MODEL` と初回 User の `DEFAULT_TIMEZONE` は秘密ではない共通変数として `wrangler.jsonc` に定義し、Bot Token と OpenAI API Key は必ず Secret にします。
 
 ## D1 migration
 
-migration は `migrations/` の連番 SQL を正として管理します。適用前に未適用一覧を確認し、空DBへの初回適用と既存DBへのロールフォワードで同じコマンドを使います。データベース名を明記し、環境の取り違えを防いでください。
+migration は `migrations/` の連番 SQL を正として管理します。ローカル開発とリモート運用は同じ `discord-ai-bot` bindingを使い、`--local`／`--remote` で接続先だけを明示します。
 
 ### Local
 
-Cloudflare認証なしで、`wrangler dev --env local` と同じローカルD1へ適用します。
+Cloudflare認証なしで、`wrangler dev` と同じローカルD1へ適用します。
 
 ```bash
-npx wrangler d1 migrations list discord-ai-bot-local --local --env local
-npx wrangler d1 migrations apply discord-ai-bot-local --local --env local
+npx wrangler d1 migrations list discord-ai-bot --local
+npx wrangler d1 migrations apply discord-ai-bot --local
 ```
 
 空DBから再現性を確認する場合は、Git対象外の一時ディレクトリを指定できます。
 
 ```bash
 rm -rf .wrangler/migration-check
-npx wrangler d1 migrations apply discord-ai-bot-local --local --env local --persist-to .wrangler/migration-check
+npx wrangler d1 migrations apply discord-ai-bot --local --persist-to .wrangler/migration-check
 ```
 
-### Preview
+### Remote
 
-先に `wrangler.jsonc` のPreview用 `database_id` を作成済みD1のIDへ置換し、Cloudflareへログインしてから実行します。
+`wrangler.jsonc` の `database_id` を作成済みD1のIDへ置換し、Cloudflareへログインしてから単一のリモートDBへ適用します。
 
 ```bash
-npx wrangler d1 migrations list discord-ai-bot-preview --remote --env preview
-npx wrangler d1 migrations apply discord-ai-bot-preview --remote --env preview
+npx wrangler d1 migrations list discord-ai-bot --remote
+npx wrangler d1 migrations apply discord-ai-bot --remote
+npx wrangler d1 migrations list discord-ai-bot --remote
 ```
 
-### Production
-
-Production用D1のバックアップ方針と対象名を再確認してから適用します。Previewで同じmigrationが成功していない状態では実行しません。
-
-```bash
-npx wrangler d1 migrations list discord-ai-bot-production --remote --env production
-npx wrangler d1 migrations apply discord-ai-bot-production --remote --env production
-```
-
-適用後に再度 `migrations list` を実行し、未適用migrationがないことを確認します。D1は適用済みファイル名を `d1_migrations` に記録するため、適用済みSQLは編集せず、変更は次番号のmigrationとして追加します。
+適用後の一覧で未適用migrationがないことを確認します。D1は適用済みファイル名を `d1_migrations` に記録するため、適用済みSQLは編集せず、変更は次番号のmigrationとして追加します。
 
 ## 現在のエンドポイント
 
@@ -149,12 +132,11 @@ Cron は1回につき最大100件を処理します。期限到来分を60秒の
 
 同じ Interaction が再処理された場合、Interaction ID を Reminder ID とすることで二重作成を抑止します。AI出力の取得または検証に失敗した場合は Brief、Reminder、checkpointを更新しません。Discord応答の編集に失敗した場合はDB更新済みでcheckpoint未更新となり、同一Interactionの再処理でReminderは重複せず、Briefは同じ値に収束します。運用時は秘密値や会話本文を表示せず、外部APIの状態コードとInteraction IDだけで障害箇所を調査してください。
 
-## 公式仕様（2026-09-21 確認）
+## 公式仕様（2026-09-22 確認）
 
 - [Wrangler configuration](https://developers.cloudflare.com/workers/wrangler/configuration/)
 - [Cron Triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/)
 - [Vitest integration](https://developers.cloudflare.com/workers/testing/vitest-integration/)
-- [D1 environments](https://developers.cloudflare.com/d1/configuration/environments/)
 - [D1 migrations](https://developers.cloudflare.com/d1/reference/migrations/)
 - [D1 Database API](https://developers.cloudflare.com/d1/worker-api/d1-database/)
 - [D1 prepared statements](https://developers.cloudflare.com/d1/worker-api/prepared-statements/)

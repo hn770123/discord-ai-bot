@@ -8,7 +8,7 @@ export default defineWorkersConfig({
   test: {
     poolOptions: {
       workers: {
-        wrangler: { configPath: './wrangler.jsonc', environment: 'local' },
+        wrangler: { configPath: './wrangler.jsonc' },
         miniflare: { bindings: { TEST_MIGRATIONS: migrations } },
       },
     },

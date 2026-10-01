@@ -8,7 +8,7 @@
     "node": "22.x"
   },
   "scripts": {
-    "dev": "wrangler dev --env local",
+    "dev": "wrangler dev",
     "discord:register-command": "node scripts/register-command.mjs",
     "lint": "eslint .",
     "format": "prettier --write .",
