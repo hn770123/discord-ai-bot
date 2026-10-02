@@ -13,7 +13,7 @@
   },
   // Worker とリモート D1 は環境を分けず、このトップレベル設定だけを運用する。
   "vars": {
-    "CLOUDFLARE_AI_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+    "CLOUDFLARE_AI_MODEL": "@cf/google/gemma-4-26b-a4b-it",
     "DEFAULT_TIMEZONE": "Asia/Tokyo",
   },
   "d1_databases": [
