@@ -11,7 +11,7 @@ Cloudflare Workers の HTTP Interaction と Cron Trigger で動作する、小�
 | 実装上の制約や障害時の挙動を確認する | [Implementation Notes](implementation.md)   |
 | 構想・過去の実装計画を確認する       | [Draft](draft.md)／[実装計画](plan.md)      |
 
-本番セットアップの正本は `deployment.md` です。認証情報の取得、Cloudflare へのログイン、D1、Secret、デプロイ、Discord の Endpoint とコマンド登録を、実行順に1本の手順として記載しています。README の断片的なコマンドをつなぎ合わせて本番作業を行わないでください。
+本番セットアップの正本は `deployment.md` です。認証情報の取得、Cloudflare へのログイン、D1、Secret、初回デプロイ、Discord の Endpoint とコマンド登録に加え、`main` 更新時のGitHub Actionsによる自動デプロイを記載しています。README の断片的なコマンドをつなぎ合わせて本番作業を行わないでください。
 
 ## 構成
 
@@ -104,8 +104,8 @@ DISCORD_BOT_TOKEN=...
 
 Interaction body は64 KiB、prompt・AI応答・Brief・Reminder本文は各2000文字が上限です。Discord APIは10秒、Workers AIは30秒で打ち切ります。ログには相関IDとエラー分類だけを記録し、token、API key、会話全文、Briefは記録しません。
 
-Cron は1回につき最大100件を処理し、60秒のleaseを取得します。通信失敗、HTTP 408、429、5xxは指数バックオフで最大5回まで再試行し、それ以外のDiscord 4xxまたは試行上限到達は `failed` とします。詳しい状態遷移と復旧方法は [Implementation Notes](implementation.md) とデプロイガイドの[障害対応](deployment.md#11-障害対応とrollback)を参照してください。
+Cron は1回につき最大100件を処理し、60秒のleaseを取得します。通信失敗、HTTP 408、429、5xxは指数バックオフで最大5回まで再試行し、それ以外のDiscord 4xxまたは試行上限到達は `failed` とします。詳しい状態遷移と復旧方法は [Implementation Notes](implementation.md) とデプロイガイドの[障害対応](deployment.md#12-障害対応とrollback)を参照してください。
 
 ## 公式資料
 
-外部サービスを設定する際は、デプロイガイド末尾の[公式資料](deployment.md#12-公式資料)から最新仕様を確認してください。
+外部サービスを設定する際は、デプロイガイド末尾の[公式資料](deployment.md#13-公式資料)から最新仕様を確認してください。

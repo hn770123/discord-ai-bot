@@ -14,7 +14,7 @@
 | 4 | Discord Developer Portal／端末 | Interaction Endpoint設定、`/ai` 登録 | Guildで `/ai` が表示 |
 | 5 | Discord／Cloudflare | スモークテスト | 会話・予定・ログを確認 |
 
-既存環境の更新は、[8. 通常の再デプロイ](#8-通常の再デプロイ)から開始できます。
+既存環境は、通常は[8. mainブランチからの自動デプロイ](#8-mainブランチからの自動デプロイ)で更新します。障害時などに手元から再実行する場合は、[9. 手動での再デプロイ](#9-手動での再デプロイ)を参照してください。
 
 ## 2. ローカル端末で事前確認
 
@@ -236,9 +236,44 @@ npx wrangler tail
 
 履歴が空になる場合は、対象チャンネルの View Channels／Read Message History、Botの参加状態、Discord側のMessage Contentに関する現行要件、実APIレスポンスを確認します。
 
-## 8. 通常の再デプロイ
+## 8. mainブランチからの自動デプロイ
 
-Application、D1、Secretsが構築済みなら、サービスの初期設定は繰り返しません。
+初回構築を完了した後は、`.github/workflows/deploy.yml` が `main` ブランチへのpush（Pull Requestのマージを含む）を検知し、次の処理を自動実行します。
+
+1. 対象コミットをcheckoutし、Node.jsと依存関係を固定バージョンで準備する。
+2. `npm run check` でlint、format、typecheck、test、migration検査を行う。
+3. リモートD1へ未適用migrationを適用する。
+4. 同じコミットからWorkerをデプロイする。
+
+migrationとデプロイは同じconcurrency groupで直列化されます。新しいpushがあっても進行中のデプロイは中断せず、後続の実行が待機します。いずれかの処理が失敗した場合、それより後の処理は実行されません。
+
+### 8.1 GitHub EnvironmentとSecretsを準備する
+
+移動先: GitHubリポジトリの **Settings → Environments**
+
+1. `production` Environmentを作成する。
+2. Environment secretsへ次の2件を登録する。
+
+| Secret | 内容 |
+| --- | --- |
+| `CLOUDFLARE_API_TOKEN` | 対象Workerの編集と対象D1の編集に必要な最小権限のCloudflare API Token |
+| `CLOUDFLARE_ACCOUNT_ID` | WorkerとD1を所有するCloudflare Account ID |
+
+TokenはこのEnvironment以外へ登録せず、値をworkflow、ログ、Pull Requestへ貼り付けません。ブランチ保護ルールで、`main` へ直接pushせずPull Requestの必須check成功後にマージする運用を推奨します。完全な自動デプロイにする場合はEnvironmentのrequired reviewersを設定しません。承認ゲートが必要な場合だけrequired reviewersを設定すると、デプロイjobは承認まで待機します。
+
+### 8.2 初回実行と結果確認
+
+workflowの追加を`main`へマージすると、自動デプロイが開始します。移動先: GitHubリポジトリの **Actions → Deploy production**
+
+1. 対象SHAの実行を開き、`Run checks`、`Apply D1 migrations`、`Deploy Worker`が成功したことを確認する。
+2. Workerの `/health` と[7章](#7-デプロイスモークテスト)の項目を確認する。
+3. 対象Git SHA、適用migration、スモークテスト結果をリリース記録へ残す。
+
+同じSHAを再デプロイする必要がある場合は対象SHAを`main`にした状態で **Run workflow** を実行します。別のSHAへ戻す場合は、`main`上でrevertコミットを作成し、履歴とデプロイ内容を一致させます。過去のworkflowを単にre-runすると、その後のmigrationとコードの互換性を損なう場合があるため避けてください。
+
+## 9. 手動での再デプロイ
+
+GitHub Actionsを利用できない障害時に限り、Application、D1、Secretsが構築済みなら次を手動実行します。通常更新ではこの手順ではなく[8章](#8-mainブランチからの自動デプロイ)を使用します。
 
 ```bash
 npm ci
@@ -257,7 +292,7 @@ npx wrangler deploy
 - Tokenをローテーションした: 対応する `wrangler secret put` を再実行する。
 - D1を変更した: 新しい `database_id` とallowlistを確認してからdeployする。
 
-## 9. 本番前チェックリスト
+## 10. 本番前チェックリスト
 
 ### 認証と秘密情報
 
@@ -275,6 +310,12 @@ npx wrangler deploy
 - [ ] Worker deploy済み、`/health` が成功
 - [ ] Cron Triggerが有効
 
+### GitHub Actions
+
+- [ ] `production` EnvironmentにCloudflareの2つのSecretが登録済み
+- [ ] `main` の必須checkとPull Request運用が設定済み
+- [ ] 対象SHAの `Deploy production` workflowが成功
+
 ### Discord
 
 - [ ] Guild Installに `applications.commands` と `bot` scopeがある
@@ -283,13 +324,13 @@ npx wrangler deploy
 - [ ] `/ai` が登録済み
 - [ ] 実際の履歴本文を取得できる
 
-## 10. セキュリティと運用上の注意
+## 11. セキュリティと運用上の注意
 
 処理は必ず「Discord署名検証 → Guild allowlist → User allowlist」の順に通します。Bot TokenはDiscord REST APIの認証にだけ使用し、クライアントへ返しません。投稿時は `allowed_mentions` を明示し、LLM生成文だけで予期しないmentionが発火しないようにします。
 
 Cronは1回最大100件、60秒のlease、最大5試行です。送信成功直後かつD1更新前に停止すると再送される可能性があるため、障害時は `reminders` の状態と対象チャンネルを照合します。
 
-## 11. 障害対応とRollback
+## 12. 障害対応とRollback
 
 | 症状 | 主な確認箇所 | 対応 |
 | --- | --- | --- |
@@ -301,13 +342,13 @@ Cronは1回最大100件、60秒のlease、最大5試行です。送信成功直�
 | D1エラー | Account、database ID、migration | `whoami` とD1一覧、migration一覧を照合 |
 | Reminderが`processing`のまま | `lease_expires_at`、Cron、Discord投稿 | lease切れ後の再取得と二重送信リスクを確認 |
 
-WorkerコードはCloudflare DashboardのDeploymentsから直前の正常deploymentへ戻すか、記録済みの正常Git SHAをcheckoutして `npx wrangler deploy` します。現在と復帰先のSHA、実行者、理由、時刻を記録します。
+Workerコードは原則として`main`で問題のコミットをrevertし、自動デプロイによって直前の正常コードへ戻します。緊急時はCloudflare DashboardのDeploymentsから直前の正常deploymentへ戻すか、記録済みの正常Git SHAをcheckoutして `npx wrangler deploy` します。緊急操作後は`main`にも同じ変更を反映し、現在と復帰先のSHA、実行者、理由、時刻を記録します。
 
 D1 migrationは原則巻き戻しません。schema変更は「新構造追加 → 両対応コード → データ移行 → 旧構造削除」に分け、コードrollback時も新schemaを残します。誤データ更新はD1 backup／Time Travelから別DBへ復元・検証し、人間の承認後に復旧します。
 
 秘密情報の露出が疑われる場合は、Discord Bot TokenとWorkers AI keyを失効・再発行し、Worker Secretを更新します。調査時も環境変数一覧、リクエスト本文、Interaction token、Briefを出力しません。
 
-## 12. 公式資料
+## 13. 公式資料
 
 外部サービスの画面名、権限、CLI仕様は変更される可能性があります。作業直前に次の公式資料を確認してください。
 
@@ -328,6 +369,12 @@ D1 migrationは原則巻き戻しません。schema変更は「新構造追加 �
 - [D1 getting started](https://developers.cloudflare.com/d1/get-started/)
 - [D1 migrations](https://developers.cloudflare.com/d1/reference/migrations/)
 - [Cron Triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/)
+- [GitHub ActionsによるWorkersのデプロイ](https://developers.cloudflare.com/workers/ci-cd/external-cicd/github-actions/)
+
+### GitHub Actions
+
+- [Workflow syntax](https://docs.github.com/actions/reference/workflows-and-actions/workflow-syntax)
+- [Environment secrets](https://docs.github.com/actions/how-tos/deploy/configure-and-manage-deployments/manage-environments)
 
 ### Workers AI
 
