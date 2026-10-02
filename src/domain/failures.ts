@@ -16,7 +16,7 @@ export function classifyFailure(error: unknown): SafeFailure {
   if (error instanceof AiApiError || error instanceof InvalidAiResultError) {
     return {
       message: 'AIサービスの応答を処理できませんでした。時間をおいてもう一度お試しください。',
-      service: 'openai',
+      service: 'cloudflare_ai',
       errorKind:
         error instanceof AiApiError
           ? (error.kind ?? classifyHttpStatus(error.status))

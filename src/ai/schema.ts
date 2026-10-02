@@ -14,7 +14,7 @@ export interface AiResult {
   reminderAdd: { at: UtcDateTime; message: string; target: 'channel' | 'user' } | null;
 }
 
-/** OpenAI Structured Outputs へ渡す、追加プロパティを許さない schema。 */
+/** Workers AI の JSON Mode へ渡す、追加プロパティを許さない schema。 */
 export const AI_RESULT_JSON_SCHEMA = {
   type: 'object',
   additionalProperties: false,

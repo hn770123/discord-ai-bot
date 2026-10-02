@@ -2,7 +2,7 @@
 import { applyD1Migrations, env } from 'cloudflare:test';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { parseAiResult } from '../src/ai/schema';
-import { createOpenAiClient, type AiClient } from '../src/ai/client';
+import { createCloudflareAiClient, type AiClient, type WorkersAiBinding } from '../src/ai/client';
 import type { DiscordClient, DiscordMessage } from '../src/discord/client';
 import { normalizeConversation } from '../src/domain/conversation';
 import { toSnowflake, toUtcDateTime } from '../src/domain/types';
@@ -55,17 +55,23 @@ describe('AI result schema', () => {
     ).toThrow();
   });
 
-  /** Responses APIが不正JSONを返しても、保存可能な結果として扱わない。 */
-  it('rejects invalid JSON returned by the Responses API', async () => {
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
-      Response.json({
-        output: [{ content: [{ type: 'output_text', text: '{invalid-json' }] }],
-      }),
-    );
-    const client = createOpenAiClient('api-key', 'test-model', fetcher);
+  /** Workers AIが不正JSONを返しても、保存可能な結果として扱わない。 */
+  it('rejects invalid JSON returned by Workers AI', async () => {
+    let call: Parameters<WorkersAiBinding['run']> | undefined;
+    const run: WorkersAiBinding['run'] = (...arguments_) => {
+      call = arguments_;
+      return Promise.resolve({ response: '{invalid-json' });
+    };
+    const binding: WorkersAiBinding = { run };
+    const client = createCloudflareAiClient(binding, 'test-model');
 
     await expect(client.generate('prompt', NOW)).rejects.toMatchObject({ status: 502 });
-    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(call?.[0]).toBe('test-model');
+    expect(call?.[1]).toMatchObject({
+      prompt: 'prompt',
+      response_format: { type: 'json_schema' },
+    });
+    expect(call?.[2]?.signal).toBeInstanceOf(AbortSignal);
   });
 });
 

@@ -9,7 +9,7 @@ describe('safe failures and structured logs', () => {
   it('classifies an AI failure without exposing credentials or content', () => {
     expect(classifyFailure(new AiApiError(429))).toEqual({
       message: 'AIサービスの応答を処理できませんでした。時間をおいてもう一度お試しください。',
-      service: 'openai',
+      service: 'cloudflare_ai',
       errorKind: 'rate_limited',
       status: 429,
     });
@@ -21,7 +21,7 @@ describe('safe failures and structured logs', () => {
     createLogger(sink).error('interaction.failed', {
       requestId: 'request-id',
       interactionId: 'interaction-id',
-      service: 'openai',
+      service: 'cloudflare_ai',
       errorKind: 'timeout',
       outcome: 'failed',
     });
@@ -32,7 +32,7 @@ describe('safe failures and structured logs', () => {
       event: 'interaction.failed',
       requestId: 'request-id',
       interactionId: 'interaction-id',
-      service: 'openai',
+      service: 'cloudflare_ai',
       errorKind: 'timeout',
       outcome: 'failed',
     });

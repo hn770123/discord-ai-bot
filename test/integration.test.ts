@@ -1,10 +1,10 @@
 /**
- * Discord と OpenAI のHTTP境界をモックサーバー相当の fetch router で置き換え、
+ * Discord のHTTP境界とWorkers AI Bindingをテスト用実装へ置き換え、
  * 署名済みInteractionからD1永続化・Discord応答までを実クライアントで結合検証する。
  */
 import { applyD1Migrations, env } from 'cloudflare:test';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
-import { createOpenAiClient } from '../src/ai/client';
+import { createCloudflareAiClient, type WorkersAiBinding } from '../src/ai/client';
 import { createDiscordClient } from '../src/discord/client';
 import { processAiInteraction } from '../src/handlers/ai';
 import { handleInteraction } from '../src/handlers/interaction';
@@ -18,32 +18,12 @@ beforeAll(async () => {
   await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
 });
 
-/** DiscordとOpenAIのURL別に、実APIと同形の応答を返す。 */
+/** DiscordのURL別に、実APIと同形の応答を返す。 */
 function createExternalApiRouter(): ReturnType<typeof vi.fn<typeof fetch>> {
   return vi.fn<typeof fetch>((input, init) => {
     const url = input instanceof Request ? input.url : input.toString();
     if (url.includes('/channels/') && init?.method !== 'POST') {
       return Promise.resolve(Response.json([]));
-    }
-    if (url === 'https://api.openai.com/v1/responses') {
-      return Promise.resolve(
-        Response.json({
-          output: [
-            {
-              content: [
-                {
-                  type: 'output_text',
-                  text: JSON.stringify({
-                    response: '@everyone 統合テスト応答',
-                    brief_update: null,
-                    reminder_add: null,
-                  }),
-                },
-              ],
-            },
-          ],
-        }),
-      );
     }
     if (url.includes('/webhooks/') && init?.method === 'PATCH') {
       return Promise.resolve(Response.json({ id: '700000000000000006' }));
@@ -99,7 +79,19 @@ describe('Interaction to AI response integration', () => {
     const signed = await signedRequest(payload);
     const router = createExternalApiRouter();
     const discord = createDiscordClient('integration-bot-token', router);
-    const ai = createOpenAiClient('integration-api-key', 'test-model', router);
+    // Workers AI JSON Modeと同じく、構造化値をresponseへ格納して返す。
+    const ai = createCloudflareAiClient(
+      {
+        run: vi.fn<WorkersAiBinding['run']>().mockResolvedValue({
+          response: {
+            response: '@everyone 統合テスト応答',
+            brief_update: null,
+            reminder_add: null,
+          },
+        }),
+      },
+      'test-model',
+    );
     const pending: Promise<unknown>[] = [];
 
     const response = await handleInteraction(signed.request, {
