@@ -10,12 +10,11 @@
 | --- | --- | --- | --- |
 | 1 | ローカル端末 | clone、依存関係、チェック | `npm run check` 成功 |
 | 2 | Discord Developer Portal | Application作成、ID・鍵・Token取得、Install設定 | Botが対象Guildに参加 |
-| 3 | OpenAI Platform | Project API key取得 | API keyを安全に保管 |
-| 4 | Cloudflare Dashboard／端末 | 認証、D1確認、migration、allowlist、Secrets、deploy | `/health` が200 |
-| 5 | Discord Developer Portal／端末 | Interaction Endpoint設定、`/ai` 登録 | Guildで `/ai` が表示 |
-| 6 | Discord／Cloudflare | スモークテスト | 会話・予定・ログを確認 |
+| 3 | Cloudflare Dashboard／端末 | 認証、D1確認、migration、allowlist、Secrets、deploy | `/health` が200 |
+| 4 | Discord Developer Portal／端末 | Interaction Endpoint設定、`/ai` 登録 | Guildで `/ai` が表示 |
+| 5 | Discord／Cloudflare | スモークテスト | 会話・予定・ログを確認 |
 
-既存環境の更新は、[9. 通常の再デプロイ](#9-通常の再デプロイ)から開始できます。
+既存環境の更新は、[8. 通常の再デプロイ](#8-通常の再デプロイ)から開始できます。
 
 ## 2. ローカル端末で事前確認
 
@@ -69,23 +68,13 @@ Discordクライアントの **User Settings → Advanced → Developer Mode** �
 - Guild ID（Server ID）
 - User ID
 
-IDはsnowflakeなので、SQLでは必ず文字列として引用符で囲みます。まだInteractions Endpointは設定しません。Worker URLが確定する[7章](#7-discordを仕上げる二度目で最後の移動)で設定します。
+IDはsnowflakeなので、SQLでは必ず文字列として引用符で囲みます。まだInteractions Endpointは設定しません。Worker URLが確定する[6章](#6-discordを仕上げる二度目で最後の移動)で設定します。
 
-## 4. OpenAIを準備する
-
-移動先: [OpenAI Platform のAPI keys](https://platform.openai.com/api-keys)
-
-1. このBotを運用するProjectを選ぶ。
-2. Project API keyを作成し、`OPENAI_API_KEY` としてパスワード管理ツールへ保存する。
-3. Projectの利用上限・請求設定を運用方針に合わせて確認する。
-
-API keyは作成後に再表示できない場合があるため、安全に保管します。ChatGPTのログインやサブスクリプションとは別に、API Projectの資格情報と課金設定が必要です。
-
-## 5. Cloudflareを構築する
+## 4. Cloudflareを構築する
 
 ここからWorkerをデプロイするまで、Cloudflareの作業を続けて行います。
 
-### 5.1 認証
+### 4.1 認証
 
 人が操作する端末ではブラウザーOAuthを使用します。
 
@@ -98,7 +87,7 @@ npx wrangler whoami
 
 ブラウザーを使えないCIだけは、Cloudflare Dashboardで最小権限のAPI Tokenを作成し、CIのsecret storeから `CLOUDFLARE_API_TOKEN` と `CLOUDFLARE_ACCOUNT_ID` を環境変数として渡します。このリポジトリの通常CIへ本番Tokenを渡したり、値を `.env` や `wrangler.jsonc` へ保存したりしません。必要なToken権限は実行するWrangler操作に合わせ、Cloudflare公式の認証資料で最新の権限名を確認してください。
 
-### 5.2 D1を確認または作成する
+### 4.2 D1を確認または作成する
 
 `wrangler.jsonc` には現在D1の実 `database_id` が設定されています。まず一覧を確認し、同じIDの `discord-ai-bot` が現在のアカウントに存在する場合は**新規作成しません**。
 
@@ -114,7 +103,7 @@ npx wrangler d1 create discord-ai-bot
 
 出力された `database_id` を `wrangler.jsonc` の `d1_databases[0].database_id` へ設定します。`binding` の `DB` と `database_name` の `discord-ai-bot` は変更しません。既存IDが別アカウントのものだった場合も、対象アカウントで作成したIDへ置き換えます。
 
-### 5.3 migrationを適用する
+### 4.3 migrationを適用する
 
 リモート対象であることを明示し、適用前後に一覧を確認します。
 
@@ -126,7 +115,7 @@ npx wrangler d1 migrations list discord-ai-bot --remote
 
 未適用migrationが残っていないことを確認します。`migrations/` の適用済みSQLは編集せず、schema変更は次の連番ファイルで行います。
 
-### 5.4 allowlistを登録する
+### 4.4 allowlistを登録する
 
 3.3で控えたIDへ置き換えます。`<guild-id>` と `<user-id>` を残したまま実行しないでください。
 
@@ -145,14 +134,13 @@ npx wrangler d1 execute discord-ai-bot --remote \
   --command "SELECT guild_id, enabled FROM allowed_guilds; SELECT user_id, enabled FROM allowed_users;"
 ```
 
-### 5.5 Worker Secretsを登録する
+### 4.5 Worker Secretsを登録する
 
 各コマンドの対話プロンプトが表示されてから値を貼り付けます。値をコマンド行へ連結しないため、shell historyに残りません。
 
 ```bash
 npx wrangler secret put DISCORD_PUBLIC_KEY
 npx wrangler secret put DISCORD_BOT_TOKEN
-npx wrangler secret put OPENAI_API_KEY
 ```
 
 登録名だけを確認します。値は表示されません。
@@ -161,20 +149,21 @@ npx wrangler secret put OPENAI_API_KEY
 npx wrangler secret list
 ```
 
-`DISCORD_PUBLIC_KEY`、`DISCORD_BOT_TOKEN`、`OPENAI_API_KEY` の3件があることを確認します。`DISCORD_APPLICATION_ID` と `DISCORD_GUILD_ID` はWorker実行時に不要なのでSecretへ登録しません。
+`DISCORD_PUBLIC_KEY`、`DISCORD_BOT_TOKEN` の2件があることを確認します。`DISCORD_APPLICATION_ID` と `DISCORD_GUILD_ID` はWorker実行時に不要なのでSecretへ登録しません。
 
-### 5.6 非秘密設定とCronを確認する
+### 4.6 非秘密設定とCronを確認する
 
 `wrangler.jsonc` で次を確認します。
 
-- `OPENAI_MODEL`: 使用するResponses API対応モデル
+- `ai.binding`: Workers AIを `env.AI` として公開する設定（現在は `AI`）
+- `CLOUDFLARE_AI_MODEL`: 使用するJSON Mode対応Workers AIモデル
 - `DEFAULT_TIMEZONE`: 初回Userの既定timezone（現在は `Asia/Tokyo`）
 - `triggers.crons`: 予定通知の実行間隔（現在はUTC基準で毎分）
 - `workers_dev`: `workers.dev` URLを発行する設定
 
 Cronは通常会話取得ではなく、期限到来した予定通知だけを処理します。
 
-### 5.7 Workerをデプロイする
+### 4.7 Workerをデプロイする
 
 D1 migrationとSecretsの確認後にデプロイします。
 
@@ -191,7 +180,7 @@ curl -i "$WORKER_URL/health"
 
 `200`、`cache-control: no-store`、`{"status":"ok"}` を確認します。
 
-## 6. Discordコマンド登録用の端末準備
+## 5. Discordコマンド登録用の端末準備
 
 3章で控えた値を、現在のシェルだけへ設定します。先頭に空白を入れても履歴保存を防げないshell設定があるため、共有端末では安全なsecret managerのCLI等を使用してください。
 
@@ -219,7 +208,7 @@ Global Commandとして登録する明確な理由がある場合だけ、`DISCO
 DISCORD_COMMAND_SCOPE=global npm run discord:register-command
 ```
 
-## 7. Discordを仕上げる（二度目で最後の移動）
+## 6. Discordを仕上げる（二度目で最後の移動）
 
 移動先: Discord Developer Portalの対象Application
 
@@ -229,13 +218,13 @@ DISCORD_COMMAND_SCOPE=global npm run discord:register-command
 
 Endpoint保存に失敗した場合は、URLの `/interactions`、Workerのデプロイ、`DISCORD_PUBLIC_KEY` が同じApplication由来であることを確認します。`/health` URLをEndpointとして登録しないでください。
 
-## 8. デプロイスモークテスト
+## 7. デプロイスモークテスト
 
 次の順で確認し、対象Git SHAと結果をリリース記録へ残します。
 
 1. 許可Userが `/ai prompt:短い質問` を実行し、defer後に応答される。
 2. `/ai` 実行前の通常投稿が応答文脈へ反映され、履歴0件でも応答できる。
-3. 許可外Userではephemeral拒否となり、OpenAI APIが呼ばれていないことをログで確認する。
+3. 許可外Userではephemeral拒否となり、Workers AIが呼ばれていないことをログで確認する。
 4. `action:chat` で未来の予定を作り、`action:list` と `action:cancel` を確認する。
 5. テスト用予定を期限到来させ、CronでDiscordへ投稿され、成功時だけD1が `sent` になることを確認する。
 6. `@everyone` を含むAI応答で通知が発火せず、本人向け予定だけ本人へmentionされることを確認する。
@@ -247,7 +236,7 @@ npx wrangler tail
 
 履歴が空になる場合は、対象チャンネルの View Channels／Read Message History、Botの参加状態、Discord側のMessage Contentに関する現行要件、実APIレスポンスを確認します。
 
-## 9. 通常の再デプロイ
+## 8. 通常の再デプロイ
 
 Application、D1、Secretsが構築済みなら、サービスの初期設定は繰り返しません。
 
@@ -263,19 +252,19 @@ npx wrangler deploy
 
 次の場合だけ追加作業を行います。
 
-- コマンド定義を変更した: [6章](#6-discordコマンド登録用の端末準備)の登録を再実行する。
+- コマンド定義を変更した: [5章](#5-discordコマンド登録用の端末準備)の登録を再実行する。
 - Discord Applicationを変更した: Public Key、Bot Token、Application ID、Endpointをすべて対応させる。
-- Token／API keyをローテーションした: 対応する `wrangler secret put` を再実行する。
+- Tokenをローテーションした: 対応する `wrangler secret put` を再実行する。
 - D1を変更した: 新しい `database_id` とallowlistを確認してからdeployする。
 
-## 10. 本番前チェックリスト
+## 9. 本番前チェックリスト
 
 ### 認証と秘密情報
 
 - [ ] `npx wrangler whoami` が対象Cloudflare Accountを示す
 - [ ] Discord Application ID、Public Key、Bot Tokenが同じApplication由来
-- [ ] OpenAI Projectと利用上限を確認済み
-- [ ] 3つのWorker Secret名を確認済み
+- [ ] Cloudflare Workers AIの利用上限を確認済み
+- [ ] 2つのWorker Secret名を確認済み
 - [ ] 秘密値がGit、shell history、ログへ残っていない
 
 ### Cloudflare
@@ -294,21 +283,21 @@ npx wrangler deploy
 - [ ] `/ai` が登録済み
 - [ ] 実際の履歴本文を取得できる
 
-## 11. セキュリティと運用上の注意
+## 10. セキュリティと運用上の注意
 
 処理は必ず「Discord署名検証 → Guild allowlist → User allowlist」の順に通します。Bot TokenはDiscord REST APIの認証にだけ使用し、クライアントへ返しません。投稿時は `allowed_mentions` を明示し、LLM生成文だけで予期しないmentionが発火しないようにします。
 
 Cronは1回最大100件、60秒のlease、最大5試行です。送信成功直後かつD1更新前に停止すると再送される可能性があるため、障害時は `reminders` の状態と対象チャンネルを照合します。
 
-## 12. 障害対応とRollback
+## 11. 障害対応とRollback
 
 | 症状 | 主な確認箇所 | 対応 |
 | --- | --- | --- |
 | Endpointを保存できない | `/interactions`、Public Key、Worker URL | 同じDiscord ApplicationのPublic KeyをSecretへ再登録してdeploy |
 | `/ai` が表示されない | Guild Install、command scope、Application/Guild ID | Guild commandを再登録し、登録時の状態コードを確認 |
 | Discord 401／403 | Bot Token、チャンネル権限、Bot参加状態 | Tokenを再登録、権限を修復（値はログへ出さない） |
-| OpenAI timeout／5xx | OpenAI status、model、30秒上限 | 外部障害なら待機。継続時は直前の正常設定へ戻す |
-| OpenAI invalid response | modelのStructured Outputs対応、schema | DB更新がないことを確認し、model／prompt変更を戻す |
+| Workers AI timeout／障害 | Workers AI status、model、30秒上限 | 外部障害なら待機。継続時は直前の正常設定へ戻す |
+| Workers AI invalid response | modelのJSON Mode対応、schema | DB更新がないことを確認し、model／prompt変更を戻す |
 | D1エラー | Account、database ID、migration | `whoami` とD1一覧、migration一覧を照合 |
 | Reminderが`processing`のまま | `lease_expires_at`、Cron、Discord投稿 | lease切れ後の再取得と二重送信リスクを確認 |
 
@@ -316,9 +305,9 @@ WorkerコードはCloudflare DashboardのDeploymentsから直前の正常deploym
 
 D1 migrationは原則巻き戻しません。schema変更は「新構造追加 → 両対応コード → データ移行 → 旧構造削除」に分け、コードrollback時も新schemaを残します。誤データ更新はD1 backup／Time Travelから別DBへ復元・検証し、人間の承認後に復旧します。
 
-秘密情報の露出が疑われる場合は、Discord Bot TokenとOpenAI API keyを失効・再発行し、Worker Secretを更新します。調査時も環境変数一覧、リクエスト本文、Interaction token、Briefを出力しません。
+秘密情報の露出が疑われる場合は、Discord Bot TokenとWorkers AI keyを失効・再発行し、Worker Secretを更新します。調査時も環境変数一覧、リクエスト本文、Interaction token、Briefを出力しません。
 
-## 13. 公式資料
+## 12. 公式資料
 
 外部サービスの画面名、権限、CLI仕様は変更される可能性があります。作業直前に次の公式資料を確認してください。
 
@@ -340,9 +329,8 @@ D1 migrationは原則巻き戻しません。schema変更は「新構造追加 �
 - [D1 migrations](https://developers.cloudflare.com/d1/reference/migrations/)
 - [Cron Triggers](https://developers.cloudflare.com/workers/configuration/cron-triggers/)
 
-### OpenAI
+### Workers AI
 
-- [Developer quickstart](https://platform.openai.com/docs/quickstart)
-- [API keys](https://platform.openai.com/api-keys)
-- [Responses API](https://developers.openai.com/api/reference/resources/responses/methods/create)
-- [Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs)
+- [Workers AI Binding](https://developers.cloudflare.com/workers-ai/configuration/bindings/)
+- [JSON Mode](https://developers.cloudflare.com/workers-ai/features/json-mode/)
+- [Models](https://developers.cloudflare.com/workers-ai/models/)

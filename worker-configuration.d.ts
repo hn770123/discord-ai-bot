@@ -1,14 +1,14 @@
 // Wrangler の型生成を導入するまで、Phase 0 で使用する Binding の契約を一か所に置く。
 interface Env {
   DB: D1Database;
+  /** API keyなしでWorkers AIを呼び出すCloudflare Binding。 */
+  AI: import('./src/ai/client').WorkersAiBinding;
   /** Discord署名検証用の公開鍵。Bot Tokenとは異なり、受信リクエストの認証だけに使う。 */
   DISCORD_PUBLIC_KEY: string;
   /** Channel Messages API の Bot 認証に使うSecret。 */
   DISCORD_BOT_TOKEN: string;
-  /** OpenAI Responses API の認証に使うSecret。 */
-  OPENAI_API_KEY: string;
-  /** Structured Outputs 対応モデル名。環境ごとに明示する。 */
-  OPENAI_MODEL: string;
+  /** JSON Mode対応のWorkers AIモデル名。環境ごとに明示する。 */
+  CLOUDFLARE_AI_MODEL: string;
   /** 初回Userへ設定する IANA timezone。 */
   DEFAULT_TIMEZONE: string;
   /** Vitestだけが注入するmigration。デプロイ環境では参照しない。 */

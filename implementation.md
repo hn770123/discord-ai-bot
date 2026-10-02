@@ -103,7 +103,7 @@ Existing reminders if needed
 `target = channel` はメンションなし、`target = user` は作成者本人へのメンション。
 LLM出力はWorker側で日時・target・文字数等を検証する。
 
-OpenAI Responses API の `text.format` に strict JSON Schema を指定する。モデルがschemaへ適合させた場合も信用せず、Workerで未知プロパティ、空文字、Discordの2000文字上限、無効／過去日時、`channel`／`user` 以外のtargetを再検証する。`user` はInteractionを実行した本人へ固定し、任意User IDをモデルから受け取らない。
+Cloudflare Workers AI の `response_format` に JSON Schemaを指定する。モデルがschemaへ適合させた場合も信用せず、Workerで未知プロパティ、空文字、Discordの2000文字上限、無効／過去日時、`channel`／`user` 以外のtargetを再検証する。`user` はInteractionを実行した本人へ固定し、任意User IDをモデルから受け取らない。
 
 ## 7. Mention制御
 Discord投稿時は `allowed_mentions` を明示する。
@@ -187,7 +187,7 @@ LLM失敗時にBriefやReminderを中途半端に更新しない。
 - Channel履歴: Discordへの1リクエスト、最大100件
 - prompt、AI応答、Brief、Reminder本文: 各2000文字
 - Discord REST API: 10秒
-- OpenAI Responses API: 30秒
+- Cloudflare Workers AI Binding: 30秒
 
 外部APIのtimeout／通信例外は専用エラーへ変換し、URL、HTTP本文、入力文を例外へ含めない。AI失敗、Discord失敗、その他の内部失敗は利用者向けの固定文へ分類する。詳細な例外メッセージをInteraction responseへ転記しない。
 
@@ -197,7 +197,7 @@ LLM失敗時にBriefやReminderを中途半端に更新しない。
 
 ## 12. 統合テスト
 
-`test/integration.test.ts` はテスト用Ed25519鍵でInteractionを署名し、実際の署名検証・allowlist・defer・AI workflow・D1 repositoryを通す。Discord REST APIとOpenAI Responses APIだけをURL別fetch routerで置換し、HTTP request形式、Structured Output、mention抑止、checkpoint保存を一連で検証する。CIでは単体テストと同じWorkers runtime内で動かし、実tokenや外部通信を必要としない。
+`test/integration.test.ts` はテスト用Ed25519鍵でInteractionを署名し、実際の署名検証・allowlist・defer・AI workflow・D1 repositoryを通す。Discord REST APIをfetch router、Workers AI Bindingをテスト用実装で置換し、HTTP request形式、Structured Output、mention抑止、checkpoint保存を一連で検証する。CIでは単体テストと同じWorkers runtime内で動かし、実tokenや外部通信を必要としない。
 
 ## 13. 参考
 Discord:
@@ -211,6 +211,6 @@ Cloudflare:
 - https://developers.cloudflare.com/d1/
 - https://developers.cloudflare.com/workers/configuration/cron-triggers/
 
-OpenAI:
-- https://developers.openai.com/api/reference/resources/responses/methods/create
-- https://developers.openai.com/api/docs/guides/structured-outputs
+Cloudflare Workers AI:
+- https://developers.cloudflare.com/workers-ai/configuration/bindings/
+- https://developers.cloudflare.com/workers-ai/features/json-mode/

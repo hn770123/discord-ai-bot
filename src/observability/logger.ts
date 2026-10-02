@@ -8,7 +8,7 @@ export interface LogContext {
   requestId?: string;
   interactionId?: string;
   reminderId?: string;
-  service?: 'discord' | 'openai' | 'd1' | 'worker';
+  service?: 'discord' | 'cloudflare_ai' | 'd1' | 'worker';
   status?: number;
   outcome?: 'accepted' | 'rejected' | 'succeeded' | 'failed' | 'retrying';
   errorKind?:

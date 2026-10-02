@@ -1,6 +1,6 @@
 /** Cloudflare Worker のエントリーポイント。HTTP と Cron の境界だけを公開する。 */
 import { createDiscordClient } from './discord/client';
-import { createOpenAiClient } from './ai/client';
+import { createCloudflareAiClient } from './ai/client';
 import { processAiInteraction } from './handlers/ai';
 import { handleInteraction } from './handlers/interaction';
 import { processReminderManagement } from './handlers/reminder-management';
@@ -32,7 +32,8 @@ async function handleFetch(
 
   if (request.method === 'POST' && url.pathname === '/interactions') {
     const discord = createDiscordClient(env.DISCORD_BOT_TOKEN);
-    const ai = createOpenAiClient(env.OPENAI_API_KEY, env.OPENAI_MODEL);
+    // Workers AI は同一CloudflareアカウントのBinding経由で呼び、API keyを保持しない。
+    const ai = createCloudflareAiClient(env.AI, env.CLOUDFLARE_AI_MODEL);
     return handleInteraction(request, {
       db: env.DB,
       publicKey: env.DISCORD_PUBLIC_KEY,

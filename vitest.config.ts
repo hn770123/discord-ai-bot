@@ -9,6 +9,8 @@ export default defineWorkersConfig({
     poolOptions: {
       workers: {
         wrangler: { configPath: './wrangler.jsonc' },
+        // Workers AIは各テストで偽物を注入し、認証が必要なリモートBindingへ接続しない。
+        remoteBindings: false,
         miniflare: { bindings: { TEST_MIGRATIONS: migrations } },
       },
     },

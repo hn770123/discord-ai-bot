@@ -7,9 +7,13 @@
   "observability": {
     "enabled": true,
   },
+  // Workers AIをAPI key不要のBindingとしてenv.AIへ公開する。
+  "ai": {
+    "binding": "AI",
+  },
   // Worker とリモート D1 は環境を分けず、このトップレベル設定だけを運用する。
   "vars": {
-    "OPENAI_MODEL": "gpt-5-mini",
+    "CLOUDFLARE_AI_MODEL": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
     "DEFAULT_TIMEZONE": "Asia/Tokyo",
   },
   "d1_databases": [
